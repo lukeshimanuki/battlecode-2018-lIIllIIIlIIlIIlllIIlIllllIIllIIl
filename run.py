@@ -99,6 +99,13 @@ targets = []
 
 estructures = dict()
 
+if gc.planet() == bc.Planet.Earth:
+	estructures.update({
+		(unit.location.map_location().x, unit.location.map_location().y): unit
+		for unit in gc.starting_map(bc.Planet.Earth).initial_units
+		if unit.location.is_on_map()
+	})
+
 runtimes = []
 
 while True:
