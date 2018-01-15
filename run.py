@@ -21,7 +21,7 @@ gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
-gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Mage)
@@ -41,13 +41,29 @@ roam_directions = dict()
 roam_time = dict()
 
 initialBuildQueue = [r]
-#rushBuildQueue = [r,r,h,r,r,h,m]
-rushBuildQueue = [r]
+
+def normalize_ratio(ratios):
+	total = sum(ratios.values())
+	return {
+		ut: ratios[ut] / total if ut in ratios else 0
+		for ut in [h,k,r,m]
+	}
+
+def desired_unit_ratio(round_num):
+	if round_num < 50:
+		return normalize_ratio({
+			r: 1,
+		})
+	else:
+		return normalize_ratio({
+			r: 2,
+			h: 1,
+		})
 
 min_num_workers = 8
 min_worker_ratio = .2
 
-aggressive_attacker_count = 50
+aggressive_attacker_count = 30
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
 
@@ -157,8 +173,6 @@ while True:
 			and all([u.ability_cooldown() < 20 for u in dunits[ateam][w]]) \
 		:
 			buildQueue.appendleft(w)
-		# in future let this vary as the game progresses
-		loopBuildQueue = rushBuildQueue
 
 		def add(unit, direction):
 			return location[unit.id].map_location().add(direction)
@@ -252,6 +266,9 @@ while True:
 
 		for utt in [f, r, m, k, h, w, t]:
 			for unit in dunits[ateam][utt]:
+				if not location[unit.id].is_on_map():
+					continue
+
 				ut = unit.unit_type
 
 				if ut == f:
@@ -268,9 +285,21 @@ while True:
 						rprint("produced a {}".format(buildQueue[0]))
 						buildQueue.popleft()
 						if len(buildQueue) == 0:
-							buildQueue.extend(loopBuildQueue)
+							ratio = {
+								ut: len(dunits[ateam][ut])
+								for ut in [h,r,m,k]
+							}
+							dratio = desired_unit_ratio(round_num)
+							frac = {
+								ut: ratio[ut] / dratio[ut]
+								if dratio[ut] > 0
+								else float('inf')
+								for ut in [h,r,m,k]
+							}
+							next_unit = min([r,h,m,k], key=lambda ut: frac[ut])
+							buildQueue.append(next_unit)
 
-				if ut in [k,r]:
+				if ut in [k,r] and gc.is_attack_ready(unit.id):
 					enemies_in_range = [
 						e
 						for e in eunits
@@ -283,7 +312,8 @@ while True:
 							ut != r
 							or not location[unit.id].is_within_range(
 								unit.ranger_cannot_attack_range(),
-								location[e.id])
+								location[e.id]
+							)
 						)
 					]
 					if len(enemies_in_range) > 0:
@@ -291,15 +321,14 @@ while True:
 							enemies_in_range,
 							key=value
 						)
-						if gc.is_attack_ready(unit.id):
-							gc.attack(unit.id, enemy.id)
-							health[enemy.id] = gc.unit(enemy.id).health \
-								if health[enemy.id] > unit.damage() else 0
+						gc.attack(unit.id, enemy.id)
+						health[enemy.id] = gc.unit(enemy.id).health \
+							if health[enemy.id] > unit.damage() else 0
 
 				for d in directions:
 					if gc.can_blueprint(unit.id, bc.UnitType.Factory, d):
 						gc.blueprint(unit.id, bc.UnitType.Factory, d)
-						rprint('built a factory!')
+						rprint('built a factory')
 						break
 
 				# try to replicate
@@ -337,6 +366,26 @@ while True:
 							if gc.can_build(unit.id, bp.id):
 								gc.build(unit.id, bp.id)
 								continue
+
+				if ut == h and gc.is_heal_ready(unit.id):
+					allies_in_range = [
+						a
+						for a in aunits
+						if location[unit.id].is_within_range(
+							unit.attack_range(),
+							location[a.id]
+						)
+						and health[a.id] > 0
+						and a.unit_type in [w,h,k,r,m]
+					]
+					if len(allies_in_range) > 0:
+						ally = max(
+							allies_in_range,
+							key=value
+						)
+						if gc.is_heal_ready(unit.id):
+							gc.heal(unit.id, ally.id)
+							health[ally.id] = gc.unit(ally.id).health
 
 				# update roam
 				if unit.id not in roam_directions or roam_time[unit.id] < 1:
@@ -393,10 +442,19 @@ while True:
 							#	),
 
 							# macro
+							None if ut != h else lambda d: -dist_to_nearest(
+								[
+									a
+									for a in aunits
+									if a.unit_type in [w,h,k,r,m]
+								],
+								add(unit, d),
+								lambda u: health[u.id] < u.max_health
+							),
 							None if ut != w else lambda d: -dist_to_nearest(
 								dunits[ateam][f] + dunits[ateam][t],
 								add(unit, d),
-								lambda u: u.health < u.max_health
+								lambda u: health[u.id] < u.max_health
 							),
 							None if ut not in [k,r,m] else
 								lambda d: -dist_to_nearest(
