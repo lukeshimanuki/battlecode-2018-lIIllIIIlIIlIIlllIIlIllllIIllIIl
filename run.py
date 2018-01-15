@@ -47,6 +47,10 @@ rushBuildQueue = [r]
 min_num_workers = 8
 min_worker_ratio = .2
 
+aggressive_attacker_count = 50
+nonaggressive_threshold = 1.0
+aggressive_threshold = .5
+
 buildQueue = collections.deque(initialBuildQueue)
 
 
@@ -129,22 +133,19 @@ while True:
 		#]
 
 		# remove nonexisting estructures
-		curr_estructure_locations = {
-			(e.location.map_location().x, e.location.map_location().y)
-			for e in dunits[eteam][f] + dunits[eteam][t]
-		}
+		to_remove = []
 		for es in estructures.values():
 			ml = es.location.map_location()
 			loc = (ml.x, ml.y)
-			# if we don't see it right now
-			if loc not in curr_estructure_locations:
-				try:
-					gc.sense_unit_at_location(es.location.map_location())
-					# if gets here without raising exception
-					# square must be visible
-					estructures.remove(loc)
-				except:
-					pass
+			if gc.can_sense_location(ml):
+				if gc.has_unit_at_location(ml):
+					u = gc.sense_unit_at_location(ml)
+					if u.team != eteam or u.unit_type not in [f,t]:
+						to_remove.append(loc)
+				else:
+					to_remove.append(loc)
+		for ml in to_remove:
+			estructures.pop(ml)
 		# add new estructures
 		estructures.update({
 			(e.location.map_location().x, e.location.map_location().y): e
@@ -316,7 +317,6 @@ while True:
 							location[new_worker.id] = new_worker.location
 							health[new_worker.id] = new_worker.health
 							rprint('replicated')
-							break
 
 				if location[unit.id].is_on_map():
 					# adjacent blueprints to work on
@@ -346,6 +346,13 @@ while True:
 					roam_time[unit.id] -= 1
 				rd = roam_directions[unit.id]
 
+				dmg_thresh = nonaggressive_threshold if \
+					len(dunits[ateam][r]) + \
+					len(dunits[ateam][m]) + \
+					len(dunits[ateam][k]) < aggressive_attacker_count \
+					else aggressive_threshold
+				aggressive = health[unit.id] >= unit.max_health * dmg_thresh
+
 				# try to move
 				# greedy minimize marginal danger
 				# given movements of prior robots
@@ -359,17 +366,25 @@ while True:
 							lambda d: -marginal_danger(
 								unit,
 								add(unit, d),
-								lambda e: True
+								# ignore enemies with the same range
+								# unless low on health
+								lambda e: not aggressive \
+									or ut not in [r,m]
+									or e.attack_range() != unit.attack_range()
 							),
-							None if ut != w else lambda d: dist_to_nearest(
-								eattackers,
-								add(unit, d),
-								lambda u:
-									u.
-									location.
-									map_location().
-									is_within_range(100, add(unit, d))
-							),
+							None if ut in [k,m,r] and aggressive else lambda d:
+								dist_to_nearest(
+									eattackers,
+									add(unit, d),
+									lambda e:
+										e.
+										location.
+										map_location().
+										is_within_range(
+											int((e.attack_range()**.5 + 3)**2),
+											add(unit, d)
+										)
+								),
 							#None if ut not in [k,r,m] else
 							#	lambda d: dist_to_nearest(
 							#		eattackers,
@@ -390,11 +405,11 @@ while True:
 									lambda x: True
 								),
 							None if ut not in [k,r,m] else
-								lambda d: -dist_to_nearest(
+								lambda d: min(-dist_to_nearest(
 									eunits,
 									add(unit, d),
-									lambda x: True
-								),
+									lambda e: True
+								), -unit.attack_range()),
 
 							# spread
 							lambda d: -len(nearby(
