@@ -60,6 +60,13 @@ def desired_unit_ratio(round_num):
 			h: 1,
 		})
 
+def hml(ml):
+	return (True if ml.planet == bc.Planet.Earth else False, ml.x, ml.y)
+
+def uhml(tup):
+	p, x, y = tup
+	return bc.MapLocation(bc.Planet.Earth if p else bc.Planet.Mars, x, y)
+
 min_num_workers = 8
 min_worker_ratio = .2
 
@@ -122,7 +129,24 @@ for ml in gc.all_locations_within(
 	):
 		mars_locations.append(ml)
 
+asteroids = dict()
+if planet == bc.Planet.Mars:
+	ap = gc.asteroid_pattern()
+	for round_num in range(1000):
+		if ap.has_asteroid(round_num):
+			ast = ap.asteroid(round_num)
+			asteroids[round_num] = ast
+
+kearth = set()
+for ml in gc.all_locations_within(bc.MapLocation(planet, 0, 0), 5000):
+	if pmap.initial_karbonite_at(ml) > 0:
+		if all(uhml(kml).distance_squared_to(ml) > 25 for kml in kearth):
+			kearth.add(hml(ml))
+
 runtimes = []
+
+ran_out_of_time = False
+printed_ran_out_of_time = False
 
 while True:
 	start = time.time()
@@ -406,8 +430,28 @@ while True:
 			key=lambda a: -value(a)
 		)
 
+		deposits = [
+			ast.location
+			for rn, ast in asteroids.items()
+			if rn <= round_num
+			and gc.can_sense_location(ast.location)
+			and gc.karbonite_at(ast.location) > 0
+		] if planet == bc.Planet.Mars else [
+			uhml(ml)
+			for ml in kearth
+			if gc.can_sense_location(uhml(ml))
+		]
+		to_remove = {
+			ml
+			for ml in kearth
+			if gc.can_sense_location(uhml(ml))
+			and gc.karbonite_at(uhml(ml)) == 0
+		}
+		kearth -= to_remove
+
 		for utt in [t, f, r, m, k, h, w]:
 			if gc.get_time_left_ms() < 1000:
+				ran_out_of_time = True
 				continue
 
 			for unit in dunits[ateam][utt]:
@@ -492,9 +536,13 @@ while True:
 				# try to replicate
 				nearby_bps = []
 				if ut == w and ( \
-					len(dunits[ateam][f]) > 0 or \
-					planet == bc.Planet.Mars) \
-				:
+					len(dunits[ateam][f]) > 0 \
+					or planet == bc.Planet.Mars \
+				) and ( \
+					len(dunits[ateam][w]) < min_num_workers \
+					or len(dunits[ateam][w]) < \
+						len(aunits) * min_worker_ratio \
+				):
 					nearby_bps = adjacent(
 						location[unit.id].map_location(),
 						2,
@@ -502,48 +550,44 @@ while True:
 							not u.structure_is_built() and
 							u.team == ateam
 					)
-					if len(dunits[ateam][w]) < min_num_workers \
-						or len(dunits[ateam][w]) < \
-							len(aunits) * min_worker_ratio \
-					:
-						rdirections = directions
-						if len(nearby_bps) > 0:
-							bp = nearby_bps[0]
-							ml = location[bp.id].map_location()
-							bpdir = location[unit.id]. \
-								map_location(). \
-								direction_to(ml)
-							odir = bpdir.opposite()
-							rdirections = [
-								bpdir.rotate_right().rotate_right(),
-								bpdir.rotate_right(),
-								bpdir.rotate_left().rotate_left(),
-								bpdir.rotate_left(),
-								odir.rotate_right(),
-								odir.rotate_left(),
-								odir,
-							] if not bpdir.is_diagonal() else [
-								bpdir.rotate_right(),
-								bpdir.rotate_left(),
-								bpdir.rotate_right().rotate_right(),
-								bpdir.rotate_left().rotate_left(),
-								odir.rotate_right(),
-								odir.rotate_left(),
-								odir,
-							]
-						for d in rdirections:
-							if ut == w and gc.can_replicate(unit.id, d):
-								gc.replicate(unit.id, d)
-								new_worker = gc.sense_unit_at_location(
-									add(unit, d)
-								)
-								units.append(new_worker)
-								aunits.append(new_worker)
-								dunits[ateam][w].append(new_worker)
-								ulocation(new_worker, new_worker.location)
-								health[new_worker.id] = new_worker.health
-								karbonite -= w.replicate_cost()
-								rprint('replicated')
+					rdirections = directions
+					if len(nearby_bps) > 0:
+						bp = nearby_bps[0]
+						ml = location[bp.id].map_location()
+						bpdir = location[unit.id]. \
+							map_location(). \
+							direction_to(ml)
+						odir = bpdir.opposite()
+						rdirections = [
+							bpdir.rotate_right().rotate_right(),
+							bpdir.rotate_right(),
+							bpdir.rotate_left().rotate_left(),
+							bpdir.rotate_left(),
+							odir.rotate_right(),
+							odir.rotate_left(),
+							odir,
+						] if not bpdir.is_diagonal() else [
+							bpdir.rotate_right(),
+							bpdir.rotate_left(),
+							bpdir.rotate_right().rotate_right(),
+							bpdir.rotate_left().rotate_left(),
+							odir.rotate_right(),
+							odir.rotate_left(),
+							odir,
+						]
+					for d in rdirections:
+						if ut == w and gc.can_replicate(unit.id, d):
+							gc.replicate(unit.id, d)
+							new_worker = gc.sense_unit_at_location(
+								add(unit, d)
+							)
+							units.append(new_worker)
+							aunits.append(new_worker)
+							dunits[ateam][w].append(new_worker)
+							ulocation(new_worker, new_worker.location)
+							health[new_worker.id] = new_worker.health
+							karbonite -= w.replicate_cost()
+							rprint('replicated')
 
 				# adjacent blueprints to work on
 				if ut == w:
@@ -695,6 +739,13 @@ while True:
 									add(unit, d),
 									lambda e: True
 								), -unit.attack_range()),
+							None if ut != w else
+								lambda d: min([
+									location[unit.id].
+									map_location().
+									distance_squared_to(ml)
+									for ml in deposits
+								] + [float('5000')]),
 
 							# spread
 							lambda d: -len(adjacent(
@@ -728,6 +779,10 @@ while True:
 	if len(runtimes) % 10 == 0:
 		rprint("runtime: {0:.3f}".format(max(runtimes)))
 		runtimes = []
+
+	if ran_out_of_time and not printed_ran_out_of_time:
+		printed_ran_out_of_time = True
+		rprint('##### RAN OUT OF TIME #####')
 
 	gc.next_turn()
 
