@@ -374,6 +374,16 @@ while True:
 								gc.build(unit.id, bp.id)
 								continue
 
+				# try to harvest
+				kdirection = max(
+					list(bc.Direction),
+					key=lambda d: gc.karbonite_at(add(unit, d))
+						if gc.can_harvest(unit.id, d)
+						else -1
+				)
+				if gc.can_harvest(unit.id, d):
+					gc.harvest(unit.id, d)
+
 				if ut == h and gc.is_heal_ready(unit.id):
 					allies_in_range = [
 						a
