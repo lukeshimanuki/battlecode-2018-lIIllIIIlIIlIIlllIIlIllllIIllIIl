@@ -136,7 +136,6 @@ while True:
 		karbonite = gc.karbonite()
 
 		units = list(gc.units())
-		iunits = {unit.id: unit for unit in units}
 		# a is allied team, e is enemy team
 		aunits = [unit for unit in units if unit.team == ateam]
 		eunits = [unit for unit in units if unit.team == eteam]
@@ -338,27 +337,43 @@ while True:
 				and f(munits[um])
 			]
 
-		# start with factories closer to enemies
-		dunits[ateam][f] = sorted(
-			dunits[ateam][f],
-			key=lambda u: dist_to_nearest(
-				eunits,
-				location[u.id].map_location(),
-				lambda x: True
-			)
+		def dot(d1, d2):
+			return d1.dx() * d2.dx() + d1.dy() * d2.dy()
+
+		def centroid(units):
+			tx = 0
+			ty = 0
+			num = 0
+			for unit in units:
+				if unit.location.is_on_map():
+					num += 1
+					ml = unit.location.map_location()
+					tx += ml.x
+					ty += ml.y
+			if num == 0:
+				return bc.MapLocation(planet, 0, 0)
+
+			return bc.MapLocation(planet, int(tx / num), int(ty / num))
+
+		acentroid = centroid(aunits)
+		ecentroid = centroid(eunits + list(estructures.values()))
+
+		dunits[ateam][w] = sorted(sorted(dunits[ateam][w],
+			# closer to enemies
+			key=lambda a: a.location.
+				map_location().
+				distance_squared_to(ecentroid)
+				if a.location.is_on_map() else float('inf')
+			),
+			# next tu structures
+			key=lambda a: -len(adjacent(a.location.map_location(), 2,
+				lambda u: u.unit_type in [f,t] and u.health < u.max_health
+			)) if a.location.is_on_map() else float('-inf')
 		)
-		# start with workers closer to unfinished buildingns
-		dunits[ateam][w] = sorted(
-			dunits[ateam][w],
-			key=lambda u: dist_to_nearest(
-				[
-					uu
-					for uu in dunits[ateam][f] + dunits[ateam][t]
-					if not uu.structure_is_built()
-				],
-				location[u.id].map_location(),
-				lambda u: True
-			) if location[u.id].is_on_map() else float('inf')
+
+		dunits[ateam][f] = sorted(dunits[ateam][f], key=lambda a:
+			a.location.map_location().distance_squared_to(ecentroid)
+			if a.location.is_on_map() else float('inf')
 		)
 
 		gtm = gc.research_info().get_level(t) >= 1 and (
@@ -420,24 +435,25 @@ while True:
 								gc.launch_rocket(unit.id, ml)
 								mars_locations.pop()
 					else:
-						garrison_ids = unit.structure_garrison()
-						for d in directions:
+						udirections = sorted(directions, key=lambda d:
+							add(unit, d).distance_squared_to(ecentroid)
+						)
+						for d in udirections:
 							if gc.can_unload(unit.id, d):
 								gc.unload(unit.id, d)
-						for gunit_id in garrison_ids:
-							ulocation(
-								iunits[gunit_id],
-								gc.unit(gunit_id).location
-							)
+								uu = gc.sense_unit_at_location(add(unit, d))
+								ulocation(uu, uu.location)
+
 
 				if ut == f:
-					garrison_ids = unit.structure_garrison()
-					for i in range(len(garrison_ids)):
-						d = random.choice(directions)
+					udirections = sorted(directions, key=lambda d:
+						add(unit, d).distance_squared_to(ecentroid)
+					)
+					for d in udirections:
 						if gc.can_unload(unit.id, d):
 							gc.unload(unit.id, d)
-					for gunit_id in garrison_ids:
-						ulocation(iunits[gunit_id], gc.unit(gunit_id).location)
+							uu = gc.sense_unit_at_location(add(unit, d))
+							ulocation(uu, uu.location)
 
 					if gc.can_produce_robot(unit.id, buildQueue[0]) \
 						and not gtm \
@@ -688,7 +704,7 @@ while True:
 							)),
 
 							# exploration
-							lambda d: rd.dx() * d.dx() + rd.dy() * d.dy(),
+							lambda d: dot(rd, d)
 						])
 
 						if direction and gc.can_move(unit.id, direction):
