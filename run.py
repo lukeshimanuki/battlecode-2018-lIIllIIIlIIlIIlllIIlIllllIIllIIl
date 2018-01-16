@@ -20,7 +20,7 @@ gc.reset_research()
 gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
-gc.queue_research(bc.UnitType.Healer)
+#gc.queue_research(bc.UnitType.Healer)
 #gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Mage)
@@ -99,12 +99,28 @@ targets = []
 
 estructures = dict()
 
-if gc.planet() == bc.Planet.Earth:
+planet = gc.planet()
+pmap = gc.starting_map(planet)
+
+if planet == bc.Planet.Earth:
 	estructures.update({
 		(unit.location.map_location().x, unit.location.map_location().y): unit
-		for unit in gc.starting_map(bc.Planet.Earth).initial_units
+		for unit in pmap.initial_units
 		if unit.location.is_on_map()
 	})
+
+# get mars locations
+mmap = gc.starting_map(bc.Planet.Mars)
+mars_locations = []
+for ml in gc.all_locations_within(
+	bc.MapLocation(bc.Planet.Mars, 0, 0),
+	5000
+):
+	if mmap.is_passable_terrain_at(ml) and all(
+		not ml.is_adjacent_to(ml2)
+		for ml2 in mars_locations
+	):
+		mars_locations.append(ml)
 
 runtimes = []
 
@@ -173,6 +189,10 @@ while True:
 		estructures.update({
 			(e.location.map_location().x, e.location.map_location().y): e
 			for e in dunits[eteam][f] + dunits[eteam][t]
+		})
+		location.update({
+			unit.id: unit.location
+			for unit in estructures.values()
 		})
 
 		if len(dunits[ateam][w]) < min_num_workers \
@@ -252,31 +272,88 @@ while True:
 			valid_units = [
 				unit
 				for unit in units
-				if unit.location.is_on_map()
+				if location[unit.id].is_on_map()
 				and f(unit)
 			]
 			if len(valid_units) == 0:
 				return 0
 			return min(
-				unit.location.map_location().distance_squared_to(ml)
+				location[unit.id].map_location().distance_squared_to(ml)
 				for unit in valid_units
 			)
 
+		# start with factories closer to enemies
 		dunits[ateam][f] = sorted(
 			dunits[ateam][f],
 			key=lambda u: dist_to_nearest(
 				eunits,
-				u.location.map_location(),
+				location[u.id].map_location(),
 				lambda x: True
 			)
 		)
+		# start with workers closer to unfinished buildingns
+		dunits[ateam][w] = sorted(
+			dunits[ateam][w],
+			key=lambda u: dist_to_nearest(
+				[
+					uu
+					for uu in dunits[ateam][f] + dunits[ateam][t]
+					if not uu.structure_is_built()
+				],
+				location[u.id].map_location(),
+				lambda u: True
+			) if location[u.id].is_on_map() else float('inf')
+		)
 
-		for utt in [f, r, m, k, h, w, t]:
+		gtm = gc.research_info().get_level(t) >= 1 and (
+			#gc.winning_team() == ateam or
+			(
+				len(dunits[ateam][f]) >= 2 and
+				len(dunits[ateam][w]) >= min_num_workers and
+				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
+					sum(len(dunits[eteam][ut]) for ut in [k,m,r])
+			) or (
+				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
+					aggressive_attacker_count
+			)
+		)
+
+		for utt in [t, f, r, m, k, h, w]:
+			if gc.get_time_left_ms() < 1000:
+				continue
+
 			for unit in dunits[ateam][utt]:
 				if not location[unit.id].is_on_map():
 					continue
 
 				ut = unit.unit_type
+
+				if ut == t:
+					if planet == bc.Planet.Earth:
+						for a in nearby(
+							aunits,
+							location[unit.id].map_location(),
+							2,
+							lambda a: a.id != unit.id
+						):
+							if gc.can_load(unit.id, a.id):
+								gc.load(unit.id, a.id)
+								location[a.id] = gc.unit(a.id).location
+
+						if len(unit.structure_garrison()) > 0 \
+							and len(mars_locations) > 0 \
+						:
+							ml = mars_locations[-1]
+							if gc.can_launch_rocket(unit.id, ml):
+								gc.launch_rocket(unit.id, ml)
+								mars_locations.pop()
+					else:
+						garrison_ids = unit.structure_garrison()
+						for d in directions:
+							if gc.can_unload(unit.id, d):
+								gc.unload(unit.id, d)
+						for gunit_id in garrison_ids:
+							location[gunit_id] = gc.unit(gunit_id).location
 
 				if ut == f:
 					garrison_ids = unit.structure_garrison()
@@ -287,7 +364,11 @@ while True:
 					for gunit_id in garrison_ids:
 						location[gunit_id] = gc.unit(gunit_id).location
 
-					if gc.can_produce_robot(unit.id, buildQueue[0]):
+					if gc.can_produce_robot(unit.id, buildQueue[0]) \
+						and not gtm \
+						and sum(len(dunits[ateam][ut]) for ut in [k,m,r]) < \
+							aggressive_attacker_count \
+					:
 						gc.produce_robot(unit.id, buildQueue[0])
 						rprint("produced a {}".format(buildQueue[0]))
 						buildQueue.popleft()
@@ -332,27 +413,74 @@ while True:
 						health[enemy.id] = gc.unit(enemy.id).health \
 							if health[enemy.id] > unit.damage() else 0
 
-				for d in directions:
-					if gc.can_blueprint(unit.id, bc.UnitType.Factory, d):
-						gc.blueprint(unit.id, bc.UnitType.Factory, d)
+				# build factory / rocket
+				bdirections = sorted(directions, key=lambda d: -len([
+					dd
+					for dd in directions
+					if pmap.on_map(add(unit, d).add(dd))
+					and gc.can_sense_location(add(unit, d).add(dd))
+					and gc.is_occupiable(add(unit, d).add(dd))
+				]))
+				for d in bdirections:
+					if gc.can_blueprint(unit.id, t, d) and gtm:
+						gc.blueprint(unit.id, t, d)
+						rprint('built a rocket')
+						break
+					elif gc.can_blueprint(unit.id, f, d):
+						gc.blueprint(unit.id, f, d)
 						rprint('built a factory')
 						break
 
 				# try to replicate
-				for d in directions:
+				nearby_bps = []
+				if ut == w:
+					nearby_bps = nearby(
+						dunits[ateam][f] + dunits[ateam][t],
+						location[unit.id].map_location(),
+						2,
+						lambda u: not u.structure_is_built()
+					)
 					if len(dunits[ateam][w]) < min_num_workers \
 						or len(dunits[ateam][w]) < \
 							len(aunits) * min_worker_ratio \
 					:
-						if ut == w and gc.can_replicate(unit.id, d):
-							gc.replicate(unit.id, d)
-							new_worker = gc.sense_unit_at_location(add(unit, d))
-							units.append(new_worker)
-							aunits.append(new_worker)
-							dunits[ateam][w].append(new_worker)
-							location[new_worker.id] = new_worker.location
-							health[new_worker.id] = new_worker.health
-							rprint('replicated')
+						rdirections = directions
+						if len(nearby_bps) > 0:
+							bp = nearby_bps[0]
+							ml = location[bp.id].map_location()
+							bpdir = location[unit.id]. \
+								map_location(). \
+								direction_to(ml)
+							odir = bpdir.opposite()
+							rdirections = [
+								bpdir.rotate_right().rotate_right(),
+								bpdir.rotate_right(),
+								bpdir.rotate_left().rotate_left(),
+								bpdir.rotate_left(),
+								odir.rotate_right(),
+								odir.rotate_left(),
+								odir,
+							] if not bpdir.is_diagonal() else [
+								bpdir.rotate_right(),
+								bpdir.rotate_left(),
+								bpdir.rotate_right().rotate_right(),
+								bpdir.rotate_left().rotate_left(),
+								odir.rotate_right(),
+								odir.rotate_left(),
+								odir,
+							]
+						for d in rdirections:
+							if ut == w and gc.can_replicate(unit.id, d):
+								gc.replicate(unit.id, d)
+								new_worker = gc.sense_unit_at_location(
+									add(unit, d)
+								)
+								units.append(new_worker)
+								aunits.append(new_worker)
+								dunits[ateam][w].append(new_worker)
+								location[new_worker.id] = new_worker.location
+								health[new_worker.id] = new_worker.health
+								rprint('replicated')
 
 				if location[unit.id].is_on_map():
 					# adjacent blueprints to work on
@@ -423,7 +551,9 @@ while True:
 				# greedy minimize marginal danger
 				# given movements of prior robots
 				if location[unit.id].is_on_map():
-					if gc.is_move_ready(unit.id):
+					if gc.is_move_ready(unit.id) \
+						and (ut != w or len(nearby_bps) == 0) \
+					:
 						direction = pickMoveDirection(directions, [
 							# validity
 							lambda d: gc.can_move(unit.id, d),
