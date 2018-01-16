@@ -1,5 +1,5 @@
 import battlecode as bc
-import numpy as np
+#import numpy as np
 import random
 import time
 import sys
@@ -429,14 +429,24 @@ while True:
 							lambda d: gc.can_move(unit.id, d),
 
 							# micro
+							None if not (ut in [k,m,r] and aggressive) else
+								lambda d: min(1, len(
+									nearby(
+										eunits,
+										add(unit, d),
+										unit.attack_range(),
+										lambda e: True
+									)
+								)),
 							lambda d: -marginal_danger(
 								unit,
 								add(unit, d),
 								# ignore enemies with the same range
 								# unless low on health
-								lambda e: not aggressive \
-									or ut not in [r,m]
-									or e.attack_range() != unit.attack_range()
+								#lambda e: not aggressive \
+								#	or ut not in [r,m]
+								#	or e.attack_range() != unit.attack_range()
+								lambda e: True
 							),
 							None if ut in [k,m,r] and aggressive else lambda d:
 								dist_to_nearest(
