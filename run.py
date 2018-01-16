@@ -133,7 +133,10 @@ while True:
 		print("{}: {}".format(round_num, string))
 
 	try:
+		karbonite = gc.karbonite()
+
 		units = list(gc.units())
+		iunits = {unit.id: unit for unit in units}
 		# a is allied team, e is enemy team
 		aunits = [unit for unit in units if unit.team == ateam]
 		eunits = [unit for unit in units if unit.team == eteam]
@@ -158,6 +161,25 @@ while True:
 				] for unit_type in bc.UnitType
 			} for team in bc.Team
 		}
+
+		munits = {
+			(unit.location.map_location().x, unit.location.map_location().y):
+				unit
+			for unit in units
+			if unit.location.is_on_map()
+		}
+
+		def ulocation(unit, loc):
+			id = unit.id
+			if id in location:
+				ploc = location[id]
+				if ploc.is_on_map():
+					ml = ploc.map_location()
+					munits.pop((ml.x, ml.y))
+			if loc.is_on_map():
+				ml = loc.map_location()
+				munits[(ml.x, ml.y)] = unit
+			location[id] = loc
 
 		# remove invalid targets
 		#targets = [t for t in targets if all([v(t) for v in t.valid])]
@@ -225,9 +247,13 @@ while True:
 		def can_attack(unit, ml):
 			if unit.unit_type not in [k,m,r]:
 				return False
-			return location[unit.id]. \
-				map_location(). \
-				is_within_range(unit.attack_range(), ml)
+			if not location[unit.id].is_on_map():
+				return False
+			uml = location[unit.id].map_location()
+			return uml.is_within_range(unit.attack_range(), ml) and (
+				unit.unit_type != r or
+				not uml.is_within_range(unit.ranger_cannot_attack_range(), ml)
+			)
 
 		sunk_danger = {unit.id: 0 for unit in eattackers}
 
@@ -259,6 +285,15 @@ while True:
 			for enemy in eattackers:
 				sunk_danger[enemy.id] += marginal_danger_from(unit, ml, enemy)
 
+		def exists_nearby(units, ml, r, f):
+			for unit in units:
+				if f(unit) and \
+					location[unit.id].is_on_map() and \
+					location[unit.id].map_location().is_within_range(r, ml) \
+				:
+					return True
+			return False
+
 		def nearby(units, ml, r, f):
 			return [
 				unit
@@ -281,6 +316,27 @@ while True:
 				location[unit.id].map_location().distance_squared_to(ml)
 				for unit in valid_units
 			)
+
+		def adjacent(ml, r, f):
+			x, y = ml.x, ml.y
+			loc = [
+				(x + 1, y),
+				(x - 1, y),
+				(x, y + 1),
+				(x, y - 1),
+			] + ([
+				(x + 1, y + 1),
+				(x + 1, y - 1),
+				(x - 1, y + 1),
+				(x - 1, y - 1),
+			] if r == 2 else [])
+
+			return [
+				munits[um]
+				for um in loc
+				if um in munits
+				and f(munits[um])
+			]
 
 		# start with factories closer to enemies
 		dunits[ateam][f] = sorted(
@@ -318,6 +374,23 @@ while True:
 			)
 		)
 
+		# sort enemies in order of who we want to attack
+		veunits = sorted(
+			[e for e in eunits if location[e.id].is_on_map()],
+			key=value
+		)
+
+		# sort allies in order of who we want to heal
+		hunits = sorted(
+			[
+				a for a in aunits
+				if a.unit_type in [w,h,k,r,m]
+				and a.location.is_on_map()
+				and health[a.id] < a.max_health
+			],
+			key=lambda a: -value(a)
+		)
+
 		for utt in [t, f, r, m, k, h, w]:
 			if gc.get_time_left_ms() < 1000:
 				continue
@@ -330,15 +403,14 @@ while True:
 
 				if ut == t:
 					if planet == bc.Planet.Earth:
-						for a in nearby(
-							aunits,
+						for a in adjacent(
 							location[unit.id].map_location(),
 							2,
-							lambda a: a.id != unit.id
+							lambda a: a.id != unit.id and a.team == ateam
 						):
 							if gc.can_load(unit.id, a.id):
 								gc.load(unit.id, a.id)
-								location[a.id] = gc.unit(a.id).location
+								ulocation(a, gc.unit(a.id).location)
 
 						if len(unit.structure_garrison()) > 0 \
 							and len(mars_locations) > 0 \
@@ -353,7 +425,10 @@ while True:
 							if gc.can_unload(unit.id, d):
 								gc.unload(unit.id, d)
 						for gunit_id in garrison_ids:
-							location[gunit_id] = gc.unit(gunit_id).location
+							ulocation(
+								iunits[gunit_id],
+								gc.unit(gunit_id).location
+							)
 
 				if ut == f:
 					garrison_ids = unit.structure_garrison()
@@ -362,7 +437,7 @@ while True:
 						if gc.can_unload(unit.id, d):
 							gc.unload(unit.id, d)
 					for gunit_id in garrison_ids:
-						location[gunit_id] = gc.unit(gunit_id).location
+						ulocation(iunits[gunit_id], gc.unit(gunit_id).location)
 
 					if gc.can_produce_robot(unit.id, buildQueue[0]) \
 						and not gtm \
@@ -370,6 +445,7 @@ while True:
 							aggressive_attacker_count \
 					:
 						gc.produce_robot(unit.id, buildQueue[0])
+						karbonite -= buildQueue[0].factory_cost()
 						rprint("produced a {}".format(buildQueue[0]))
 						buildQueue.popleft()
 						if len(buildQueue) == 0:
@@ -387,58 +463,28 @@ while True:
 							next_unit = min([r,h,m,k], key=lambda ut: frac[ut])
 							buildQueue.append(next_unit)
 
-				if ut in [k,r] and gc.is_attack_ready(unit.id):
-					enemies_in_range = [
-						e
-						for e in eunits
-						if location[unit.id].is_within_range(
-							unit.attack_range(),
-							location[e.id]
-						)
-						and health[e.id] > 0
-						and (
-							ut != r
-							or not location[unit.id].is_within_range(
-								unit.ranger_cannot_attack_range(),
-								location[e.id]
-							)
-						)
-					]
-					if len(enemies_in_range) > 0:
-						enemy = min(
-							enemies_in_range,
-							key=value
-						)
-						gc.attack(unit.id, enemy.id)
-						health[enemy.id] = gc.unit(enemy.id).health \
-							if health[enemy.id] > unit.damage() else 0
-
-				# build factory / rocket
-				bdirections = sorted(directions, key=lambda d: -len([
-					dd
-					for dd in directions
-					if pmap.on_map(add(unit, d).add(dd))
-					and gc.can_sense_location(add(unit, d).add(dd))
-					and gc.is_occupiable(add(unit, d).add(dd))
-				]))
-				for d in bdirections:
-					if gc.can_blueprint(unit.id, t, d) and gtm:
-						gc.blueprint(unit.id, t, d)
-						rprint('built a rocket')
-						break
-					elif gc.can_blueprint(unit.id, f, d):
-						gc.blueprint(unit.id, f, d)
-						rprint('built a factory')
-						break
+				if ut in [k,r,m] and gc.is_attack_ready(unit.id):
+					for enemy in veunits:
+						if can_attack(unit, location[enemy.id].map_location()) \
+							and health[enemy.id] > 0 \
+						:
+							gc.attack(unit.id, enemy.id)
+							health[enemy.id] = gc.unit(enemy.id).health \
+								if health[enemy.id] > unit.damage() else 0
+							break
 
 				# try to replicate
 				nearby_bps = []
-				if ut == w:
-					nearby_bps = nearby(
-						dunits[ateam][f] + dunits[ateam][t],
+				if ut == w and ( \
+					len(dunits[ateam][f]) > 0 or \
+					planet == bc.Planet.Mars) \
+				:
+					nearby_bps = adjacent(
 						location[unit.id].map_location(),
 						2,
-						lambda u: not u.structure_is_built()
+						lambda u: u.unit_type in [f,t] and
+							not u.structure_is_built() and
+							u.team == ateam
 					)
 					if len(dunits[ateam][w]) < min_num_workers \
 						or len(dunits[ateam][w]) < \
@@ -478,59 +524,69 @@ while True:
 								units.append(new_worker)
 								aunits.append(new_worker)
 								dunits[ateam][w].append(new_worker)
-								location[new_worker.id] = new_worker.location
+								ulocation(new_worker, new_worker.location)
 								health[new_worker.id] = new_worker.health
+								karbonite -= w.replicate_cost()
 								rprint('replicated')
 
-				if location[unit.id].is_on_map():
-					# adjacent blueprints to work on
-					if ut == w:
-						adjacent_bp = [
-							bp
-							for bp in aunits
-							if bp.unit_type in [f,t]
-							and not bp.structure_is_built()
-							and location[unit.id].
-								is_adjacent_to(location[bp.id])
-						]
-						if len(adjacent_bp) > 0:
-							bp = max(
-								adjacent_bp,
-								key=value
-							)
-							if gc.can_build(unit.id, bp.id):
-								gc.build(unit.id, bp.id)
-								continue
-
-				# try to harvest
-				kdirection = max(
-					list(bc.Direction),
-					key=lambda d: gc.karbonite_at(add(unit, d))
-						if gc.can_harvest(unit.id, d)
-						else -1
-				)
-				if gc.can_harvest(unit.id, d):
-					gc.harvest(unit.id, d)
-
-				if ut == h and gc.is_heal_ready(unit.id):
-					allies_in_range = [
-						a
-						for a in aunits
-						if location[unit.id].is_within_range(
-							unit.attack_range(),
-							location[a.id]
-						)
-						and health[a.id] > 0
-						and a.unit_type in [w,h,k,r,m]
-					]
-					if len(allies_in_range) > 0:
-						ally = max(
-							allies_in_range,
+				# adjacent blueprints to work on
+				if ut == w:
+					adjacent_bp = adjacent(location[unit.id].map_location(), 2,
+						lambda a: a.unit_type in [f, t] and
+							not a.structure_is_built()
+					)
+					if len(adjacent_bp) > 0:
+						bp = max(
+							adjacent_bp,
 							key=value
 						)
-						if gc.is_heal_ready(unit.id):
+						if gc.can_build(unit.id, bp.id):
+							gc.build(unit.id, bp.id)
+
+				# build factory / rocket
+				if ut == w and karbonite > min( \
+					f.blueprint_cost(), \
+					t.blueprint_cost() \
+				):
+					bdirections = sorted(directions, key=lambda d: -len([
+						dd
+						for dd in directions
+						if pmap.on_map(add(unit, d).add(dd))
+						and gc.can_sense_location(add(unit, d).add(dd))
+						and gc.is_occupiable(add(unit, d).add(dd))
+					]))
+					for d in bdirections:
+						if gc.can_blueprint(unit.id, t, d) and gtm:
+							gc.blueprint(unit.id, t, d)
+							karbonite -= t.blueprint_cost()
+							rprint('built a rocket')
+							break
+						elif gc.can_blueprint(unit.id, f, d):
+							gc.blueprint(unit.id, f, d)
+							karbonite -= f.blueprint_cost()
+							rprint('built a factory')
+							break
+
+				# try to harvest
+				if ut == w:
+					kdirection = max(
+						list(bc.Direction),
+						key=lambda d: gc.karbonite_at(add(unit, d))
+							if gc.can_harvest(unit.id, d)
+							else -1
+					)
+					if gc.can_harvest(unit.id, d):
+						gc.harvest(unit.id, d)
+
+				if ut == h and gc.is_heal_ready(unit.id):
+					for ally in hunits:
+						if location[unit.id].is_within_range( \
+							unit.attack_range(), \
+							location[ally.id] \
+						) and health[ally.id] > 0:
 							gc.heal(unit.id, ally.id)
 							health[ally.id] = gc.unit(ally.id).health
+							break
 
 				# update roam
 				if unit.id not in roam_directions or roam_time[unit.id] < 1:
@@ -560,14 +616,12 @@ while True:
 
 							# micro
 							None if not (ut in [k,m,r] and aggressive) else
-								lambda d: min(1, len(
-									nearby(
-										eunits,
-										add(unit, d),
-										unit.attack_range(),
-										lambda e: True
-									)
-								)),
+								lambda d: exists_nearby(
+									eunits,
+									add(unit, d),
+									unit.attack_range(),
+									lambda e: True
+								),
 							lambda d: -marginal_danger(
 								unit,
 								add(unit, d),
@@ -627,12 +681,11 @@ while True:
 								), -unit.attack_range()),
 
 							# spread
-							lambda d: -len(nearby(
-								aunits,
+							lambda d: -len(adjacent(
 								add(unit, d),
 								1,
-								lambda u: u.id != unit.id)
-							),
+								lambda u: u.id != unit.id and u.team == ateam
+							)),
 
 							# exploration
 							lambda d: rd.dx() * d.dx() + rd.dy() * d.dy(),
@@ -640,7 +693,7 @@ while True:
 
 						if direction and gc.can_move(unit.id, direction):
 							gc.move_robot(unit.id, direction)
-							location[unit.id] = gc.unit(unit.id).location
+							ulocation(unit, gc.unit(unit.id).location)
 
 						if not direction or \
 							direction.dx() * rd.dx() + \
