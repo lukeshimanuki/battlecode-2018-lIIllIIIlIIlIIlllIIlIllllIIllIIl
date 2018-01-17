@@ -70,18 +70,19 @@ def uhml(tup):
 def filter(data, f):
 	return [d for d in data if f]
 
-min_num_workers = 8
-min_worker_ratio = .2
-
-aggressive_attacker_count = 30
+aggressive_attacker_count = 50
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
 
 buildQueue = collections.deque(initialBuildQueue)
 
-
 ateam = gc.team()
 eteam = bc.Team.Blue if ateam == bc.Team.Red else bc.Team.Red
+
+min_num_workers = 7 + len(filter(gc.units(), lambda u:
+	u.unit_type == w and u.team == ateam
+))
+min_worker_ratio = .2
 
 def pickMoveDirection(directions, criteria):
 	if len(directions) == 0:
@@ -317,8 +318,8 @@ while True:
 
 		def exists_nearby(units, ml, r, f):
 			for unit in units:
-				if f(unit) and \
-					location[unit.id].is_on_map() and \
+				if location[unit.id].is_on_map() and \
+					f(unit) and \
 					location[unit.id].map_location().is_within_range(r, ml) \
 				:
 					return True
@@ -392,12 +393,28 @@ while True:
 		acentroid = centroid(aunits)
 		ecentroid = centroid(eunits + list(estructures.values()))
 
-		dunits[ateam][w] = sorted(sorted(dunits[ateam][w],
+		dunits[ateam][w] = sorted(sorted(sorted(dunits[ateam][w],
 			# closer to enemies
-			key=lambda a: a.location.
+			key=lambda a: (a.location.
 				map_location().
-				distance_squared_to(ecentroid)
+				distance_squared_to(ecentroid) * (
+					1 if round_num < 10 else -1
+				))
 				if a.location.is_on_map() else float('inf')
+			),
+			# good build locations if building factory
+			key=lambda a: 0 if karbonite < f.blueprint_cost() else
+				-max(
+					-1 if
+						not pmap.on_map(add(a, d)) or
+						not pmap.is_passable_terrain_at(add(a, d))
+					else sum([
+						pmap.on_map(add(a, d).add(dd)) and
+						pmap.is_passable_terrain_at(add(a, d).add(dd))
+						for dd in directions
+					])
+					for d in directions
+				)
 			),
 			# next tu structures
 			key=lambda a: -len(adjacent(a.location.map_location(), 2,
@@ -424,10 +441,23 @@ while True:
 		)
 
 		# sort enemies in order of who we want to attack
-		veunits = sorted(
+		enemy_attack_order = [
+			m,
+			r,
+			k,
+			f,
+			h,
+			w,
+			t,
+		]
+		enemy_attack_priority = {
+			ut: i
+			for i, ut in enumerate(enemy_attack_order)
+		}
+		veunits = sorted(sorted(
 			[e for e in eunits if location[e.id].is_on_map()],
 			key=value
-		)
+		), key=lambda e: enemy_attack_priority[e.unit_type])
 
 		# sort allies in order of who we want to heal
 		hunits = sorted(
@@ -550,7 +580,6 @@ while True:
 							break
 
 				# try to replicate
-				nearby_bps = []
 				if ut == w and ( \
 					len(dunits[ateam][f]) > 0 \
 					or planet == bc.Planet.Mars \
@@ -605,22 +634,37 @@ while True:
 							karbonite -= w.replicate_cost()
 							#rprint('replicated')
 
-				# adjacent blueprints to work on
-				if ut == w:
-					adjacent_bp = adjacent(location[unit.id].map_location(), 2,
+				# build or repair
+				w_is_busy = (gc.unit(unit.id).worker_has_acted() if
+					ut == w else False
+				)
+				if ut == w and not w_is_busy:
+					adjacent_b = adjacent(location[unit.id].map_location(), 2,
 						lambda a: a.unit_type in [f, t] and
-							not a.structure_is_built()
+							#not a.structure_is_built()
+							health[a.id] < a.max_health and
+							a.team == ateam
 					)
-					if len(adjacent_bp) > 0:
-						bp = max(
-							adjacent_bp,
+					if len(adjacent_b) > 0:
+						a = max(
+							adjacent_b,
 							key=value
 						)
-						if gc.can_build(unit.id, bp.id):
-							gc.build(unit.id, bp.id)
+						if gc.unit(a.id).structure_is_built():
+							gc.repair(unit.id, a.id)
+							health[a.id] += unit.worker_repair_health()
+						else:
+							gc.build(unit.id, a.id)
+							health[a.id] += unit.worker_build_health()
+
+						health[a.id] = min(
+							a.max_health,
+							health[a.id],
+						)
+						w_is_busy = True
 
 				# build factory / rocket
-				if ut == w and karbonite > min( \
+				if ut == w and not w_is_busy and karbonite > min( \
 					f.blueprint_cost(), \
 					t.blueprint_cost() \
 				):
@@ -635,24 +679,27 @@ while True:
 						if gc.can_blueprint(unit.id, t, d) and gtm:
 							gc.blueprint(unit.id, t, d)
 							karbonite -= t.blueprint_cost()
+							w_is_busy = True
 							#rprint('built a rocket')
 							break
 						elif gc.can_blueprint(unit.id, f, d):
 							gc.blueprint(unit.id, f, d)
 							karbonite -= f.blueprint_cost()
+							w_is_busy = True
 							#rprint('built a factory')
 							break
 
 				# try to harvest
-				if ut == w:
-					kdirection = max(
+				if ut == w and not w_is_busy:
+					d = max(
 						list(bc.Direction),
 						key=lambda d: gc.karbonite_at(add(unit, d))
-							if gc.can_harvest(unit.id, d)
+							if pmap.on_map(add(unit, d))
 							else -1
 					)
-					if gc.can_harvest(unit.id, d):
+					if gc.karbonite_at(add(unit, d)) > 0:
 						gc.harvest(unit.id, d)
+						w_is_busy = True
 
 				if ut == h and gc.is_heal_ready(unit.id):
 					for ally in hunits:
@@ -684,20 +731,22 @@ while True:
 				# given movements of prior robots
 				uml = location[unit.id].map_location()
 				if gc.is_move_ready(unit.id) \
-					and (ut != w or len(nearby_bps) == 0) \
+					and not (ut == w and w_is_busy) \
 				:
 					direction = pickMoveDirection(directions, [
 						# validity
 						lambda d: gc.can_move(unit.id, d),
 
 						# micro
+						# be able to attack someone if aggressive
 						None if not (ut in [k,m,r] and aggressive) else
 							lambda d: exists_nearby(
 								eunits,
 								add(unit, d),
 								unit.attack_range(),
-								lambda e: True
+								lambda e: can_attack(unit, add(e, d.opposite()))
 							),
+						# avoid getting attacked
 						lambda d, ff=filter(
 							eattackers,
 							lambda e: location[e.id].is_within_range(
@@ -718,6 +767,7 @@ while True:
 							lambda e: True,
 							ff
 						),
+						# retreat if not aggressive
 						None if ut in [k,m,r] and aggressive else lambda d:
 							dist_to_nearest(
 								eattackers,
@@ -750,11 +800,12 @@ while True:
 							lambda u: True
 						),
 						None if ut not in [k,r,m] else
-							lambda d: -dist_to_nearest(
+							lambda d: min(-dist_to_nearest(
 								estructuresv,
 								add(unit, d),
-								lambda x: True
-							),
+								lambda x: True,
+								unit.attack_range()
+							), -unit.attack_range()),
 						None if ut not in [k,r,m] else
 							lambda d: min(-dist_to_nearest(
 								eunits,
