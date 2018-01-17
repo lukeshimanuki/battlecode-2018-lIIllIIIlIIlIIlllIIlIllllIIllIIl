@@ -398,7 +398,7 @@ while True:
 			key=lambda a: (a.location.
 				map_location().
 				distance_squared_to(ecentroid) * (
-					1 if round_num < 10 else -1
+					1 if round_num < 0 else -1
 				))
 				if a.location.is_on_map() else float('inf')
 			),
