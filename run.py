@@ -156,14 +156,14 @@ ran_out_of_time = False
 printed_ran_out_of_time = False
 
 while True:
-	start = time.time()
-
-	round_num = gc.round()
-
 	def rprint(string):
 		print("{}: {}".format(round_num, string))
 
 	try:
+		start = time.time()
+
+		round_num = gc.round()
+
 		karbonite = gc.karbonite()
 
 		units = list(gc.units())
@@ -246,7 +246,8 @@ while True:
 			unit.id: unit.location
 			for unit in estructures.values()
 		})
-		estructuresv = estructures.values()
+		estructuresv = list(estructures.values())
+		estructuresv_eunits = estructuresv + eunits
 
 		if len(dunits[ateam][w]) < min_num_workers \
 			and (len(buildQueue) == 0 or buildQueue[0] != w) \
@@ -801,14 +802,7 @@ while True:
 						),
 						None if ut not in [k,r,m] else
 							lambda d: min(-dist_to_nearest(
-								estructuresv,
-								add(unit, d),
-								lambda x: True,
-								unit.attack_range()
-							), -unit.attack_range()),
-						None if ut not in [k,r,m] else
-							lambda d: min(-dist_to_nearest(
-								eunits,
+								estructuresv_eunits,
 								add(unit, d),
 								lambda e: True,
 								unit.attack_range()
@@ -844,20 +838,20 @@ while True:
 						roam_time[unit.id] = 20
 				update_sunk_danger(unit, location[unit.id].map_location())
 
+		end = time.time()
+		runtimes.append(end - start)
+		if len(runtimes) % 100 == 0:
+			rprint("runtime: {0:.3f}".format(max(runtimes)))
+			rprint("time remaining: {}".format(gc.get_time_left_ms()))
+			#runtimes = []
+
+		if ran_out_of_time and not printed_ran_out_of_time:
+			printed_ran_out_of_time = True
+			rprint('##### RAN OUT OF TIME #####')
+
 	except Exception as e:
 		print('error:', e)
 		traceback.print_exc()
-
-	end = time.time()
-	runtimes.append(end - start)
-	if len(runtimes) % 100 == 0:
-		rprint("runtime: {0:.3f}".format(max(runtimes)))
-		rprint("time remaining: {}".format(gc.get_time_left_ms()))
-		#runtimes = []
-
-	if ran_out_of_time and not printed_ran_out_of_time:
-		printed_ran_out_of_time = True
-		rprint('##### RAN OUT OF TIME #####')
 
 	gc.next_turn()
 
