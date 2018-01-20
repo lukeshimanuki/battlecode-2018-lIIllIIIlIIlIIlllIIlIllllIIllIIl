@@ -966,9 +966,24 @@ while True:
 									location.
 									map_location().
 									is_within_range(
-										int((e.attack_range()**.5 + 3)**2),
+										e.vision_range,
 										add(unit, d)
 									)
+							),
+						# if aggressive retreat from lower range enemies
+						None if ut in [m,r] and aggressive else lambda d:
+							dist_to_nearest(
+								eattackers,
+								add(unit, d),
+								lambda e:
+									e.
+									location.
+									map_location().
+									is_within_range(
+										e.vision_range,
+										add(unit, d)
+									) and
+									e.attack_range() < unit.attack_range()
 							),
 						#None if ut not in [k,r,m] else
 						#	lambda d: dist_to_nearest(
