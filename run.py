@@ -22,9 +22,9 @@ gc.reset_research()
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
-gc.queue_research(bc.UnitType.Mage)
-gc.queue_research(bc.UnitType.Mage)
-gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
 #gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Ranger)
@@ -91,10 +91,10 @@ buildQueue = collections.deque(initialBuildQueue)
 ateam = gc.team()
 eteam = bc.Team.Blue if ateam == bc.Team.Red else bc.Team.Red
 
-min_num_workers = 7 + len(filter(gc.units(), lambda u:
+min_num_workers = 4 + len(filter(gc.units(), lambda u:
 	u.unit_type == w and u.team == ateam
 ))
-min_worker_ratio = .2
+min_worker_ratio = .1
 
 def pickMoveDirection(directions, criteria):
 	if len(directions) == 0:
@@ -261,6 +261,7 @@ printed_ran_out_of_time = False
 
 karbonite = None
 overcharged = None
+built_rocket = None
 
 while True:
 	def rprint(string):
@@ -274,6 +275,10 @@ while True:
 		karbonite = gc.karbonite()
 
 		units = list(gc.units())
+		iunits = {
+			unit.id: unit
+			for unit in units
+		}
 		# a is allied team, e is enemy team
 		aunits = [unit for unit in units if unit.team == ateam]
 		eunits = [unit for unit in units if unit.team == eteam]
@@ -460,7 +465,7 @@ while True:
 							return dist
 
 			if not min_dist:
-				return 0
+				return max_path_length ** 2 + 2501
 
 			return min_dist
 
@@ -551,7 +556,7 @@ while True:
 			) or (
 				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
 					aggressive_attacker_count
-			)
+			) or round_num > 600
 		)
 
 		# sort enemies in order of who we want to attack
@@ -619,6 +624,7 @@ while True:
 		kearth -= to_remove
 
 		overcharged = []
+		built_rocket = False
 
 		for utt in [t, f, r, m, k, w, h]:
 			if gc.get_time_left_ms() < 1000:
@@ -628,9 +634,7 @@ while True:
 			def run_unit(unit):
 				global karbonite
 				global overcharged
-
-				if not location[unit.id].is_on_map():
-					return
+				global built_rocket
 
 				if not gc.can_sense_unit(unit.id):
 					# must have been destroyed this turn
@@ -640,6 +644,11 @@ while True:
 				unit = gc.unit(unit.id)
 				location[unit.id] = unit.location
 				health[unit.id] = unit.health
+
+				if not location[unit.id].is_on_map():
+					return
+
+				uml = location[unit.id].map_location()
 
 				ut = unit.unit_type
 
@@ -656,36 +665,72 @@ while True:
 
 						if len(unit.structure_garrison()) > 0 \
 							and len(mars_locations) > 0 \
+							and ( \
+								round_num > 700 \
+								or len(unit.structure_garrison()) == 8 \
+								or len([ \
+									u_id \
+									for u_id in unit.structure_garrison() \
+									if iunits[u_id].unit_type in [r,m,k] \
+								]) >= 4 \
+								or health[unit.id] < unit.max_health \
+							) \
 						:
 							ml = mars_locations[-1]
 							if gc.can_launch_rocket(unit.id, ml):
 								gc.launch_rocket(unit.id, ml)
 								mars_locations.pop()
+								location[unit.id] = gc.unit(unit.id).location
+								return
 					else:
 						udirections = sorted(directions, key=lambda d:
 							add(unit, d).distance_squared_to(ecentroid)
 						)
+						unloaded = False
 						for d in udirections:
 							if gc.can_unload(unit.id, d):
 								gc.unload(unit.id, d)
 								uu = gc.sense_unit_at_location(add(unit, d))
 								ulocation(uu, uu.location)
-
+								unloaded = True
+						if not unloaded and len(unit.structure_garrison()) > 0:
+							for a in adjacent(uml, 2, lambda u: u.team == ateam):
+								if gc.can_load(unit.id, a.id):
+									gc.load(unit.id, a.id)
+									d = uml.direction_to(a.location.map_location())
+									if gc.can_unload(unit.id, d):
+										gc.unload(unit.id, d)
+										uu = gc.sense_unit_at_location(add(unit, d))
+										ulocation(uu, uu.location)
+									break
 
 				if ut == f:
 					udirections = sorted(directions, key=lambda d:
 						add(unit, d).distance_squared_to(ecentroid)
 					)
+					unloaded = False
 					for d in udirections:
 						if gc.can_unload(unit.id, d):
 							gc.unload(unit.id, d)
 							uu = gc.sense_unit_at_location(add(unit, d))
 							ulocation(uu, uu.location)
+							unloaded = True
+					if not unloaded and len(unit.structure_garrison()) > 0:
+						for a in adjacent(uml, 2, lambda u: u.team == ateam):
+							if gc.can_load(unit.id, a.id):
+								gc.load(unit.id, a.id)
+								d = uml.direction_to(a.location.map_location())
+								if gc.can_unload(unit.id, d):
+									gc.unload(unit.id, d)
+									uu = gc.sense_unit_at_location(add(unit, d))
+									ulocation(uu, uu.location)
+								break
 
 					if gc.can_produce_robot(unit.id, buildQueue[0]) \
 						and not gtm \
 						and sum(len(dunits[ateam][ut]) for ut in [k,m,r]) < \
 							aggressive_attacker_count \
+						and len(unit.structure_garrison()) < 7 \
 					:
 						gc.produce_robot(unit.id, buildQueue[0])
 						karbonite -= buildQueue[0].factory_cost()
@@ -741,6 +786,7 @@ while True:
 					len(dunits[ateam][w]) < min_num_workers \
 					or len(dunits[ateam][w]) < \
 						len(aunits) * min_worker_ratio \
+					or round_num > 750 \
 				):
 					nearby_bps = adjacent(
 						location[unit.id].map_location(),
@@ -836,6 +882,7 @@ while True:
 							karbonite -= t.blueprint_cost()
 							w_is_busy = True
 							#rprint('built a rocket')
+							built_rocket = True
 							break
 						elif gc.can_blueprint(unit.id, f, d):
 							gc.blueprint(unit.id, f, d)
@@ -918,7 +965,6 @@ while True:
 				# try to move
 				# greedy minimize marginal danger
 				# given movements of prior robots
-				uml = location[unit.id].map_location()
 				if gc.is_move_ready(unit.id) \
 					and not (ut == w and w_is_busy) \
 				:
@@ -966,7 +1012,7 @@ while True:
 									location.
 									map_location().
 									is_within_range(
-										e.vision_range,
+										int((e.vision_range**.5 + 0) ** 2),
 										add(unit, d)
 									)
 							),
@@ -1007,6 +1053,12 @@ while True:
 							0,
 							mdist
 						),
+						None if ut not in [k,r,m] else
+							lambda d: -dist_to_nearest(
+								dunits[ateam][t],
+								add(unit, d),
+								lambda a: location[a.id].is_on_map()
+							),
 						None if ut not in [k,r,m] else
 							lambda d: min(-dist_to_nearest(
 								estructuresv_eunits,
@@ -1056,6 +1108,32 @@ while True:
 			except Exception as e:
 				print('error:', e)
 				traceback.print_exc()
+
+		# if should build rocket but didn't, make space by disintegrating
+		if not built_rocket and ( \
+			gtm and \
+			gc.karbonite() > t.blueprint_cost() and \
+			len([ \
+				a
+				for a in dunits[ateam][t]
+				if location[a.id].is_on_map()
+			]) == 0 \
+		):
+			for unit in dunits[ateam][w]:
+				if gc.can_sense_unit(unit.id):
+					unit = gc.unit(unit.id)
+					if unit.location.is_on_map() and not unit.worker_has_acted():
+						disintegrated = False
+						for a in adjacent(unit.location.map_location(), 2, \
+							lambda u: u.team == ateam \
+						):
+							if gc.can_sense_unit(a.id):
+								gc.disintegrate_unit(a.id)
+								disintegrated = True
+								rprint('disintegrated')
+								break
+						if disintegrated:
+							break
 
 		gcollector.collect()
 
