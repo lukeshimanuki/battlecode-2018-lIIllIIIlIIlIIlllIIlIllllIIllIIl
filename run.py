@@ -20,16 +20,21 @@ random.seed(3142)
 
 gc.reset_research()
 gc.queue_research(bc.UnitType.Healer)
-#gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
+gc.queue_research(bc.UnitType.Mage)
+gc.queue_research(bc.UnitType.Mage)
+gc.queue_research(bc.UnitType.Mage)
 #gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Rocket)
-gc.queue_research(bc.UnitType.Mage)
-gc.queue_research(bc.UnitType.Mage)
-gc.queue_research(bc.UnitType.Mage)
+gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Knight)
+gc.queue_research(bc.UnitType.Knight)
+gc.queue_research(bc.UnitType.Worker)
+gc.queue_research(bc.UnitType.Worker)
+gc.queue_research(bc.UnitType.Worker)
+gc.queue_research(bc.UnitType.Worker)
 
 r = bc.UnitType.Ranger
 h = bc.UnitType.Healer
@@ -52,14 +57,18 @@ def normalize_ratio(ratios):
 	}
 
 def desired_unit_ratio(round_num):
-	if round_num < 50:
+	if round_num < 200:
 		return normalize_ratio({
 			r: 1,
+			k: 0,
+			m: 0,
+			h: 1,
 		})
 	else:
 		return normalize_ratio({
-			r: 2,
+			r: 1,
 			h: 1,
+			m: 0,
 		})
 
 def hml(ml):
@@ -564,6 +573,15 @@ while True:
 			key=value
 		), key=lambda e: enemy_attack_priority[e.unit_type])
 
+		# mages prioritize enemies adjacent to other enemies
+		meunits = sorted(
+			[e for e in eunits if location[e.id].is_on_map()],
+			key=lambda e: -1 + sum(
+				1 if u.team == ateam else -1
+				for u in adjacent(location[e.id].map_location(), 2, lambda u: True)
+			)
+		)
+
 		# sort allies in order of who we want to heal
 		hunits = sorted(
 			[
@@ -688,7 +706,8 @@ while True:
 							next_unit = min([r,h,m,k], key=lambda ut: frac[ut])
 							buildQueue.append(next_unit)
 
-				if ut in [k,r,m] and gc.is_attack_ready(unit.id):
+				# knight / ranger attack
+				if ut in [k,r] and gc.is_attack_ready(unit.id):
 					for enemy in veunits:
 						if can_attack(unit, location[enemy.id].map_location()) \
 							and health[enemy.id] > 0 \
@@ -696,6 +715,22 @@ while True:
 							gc.attack(unit.id, enemy.id)
 							health[enemy.id] = gc.unit(enemy.id).health \
 								if health[enemy.id] > unit.damage() else 0
+							break
+
+				# mage attack
+				if ut == m and gc.is_attack_ready(unit.id):
+					for enemy in meunits:
+						if can_attack(unit, location[enemy.id].map_location()) \
+							and health[enemy.id] > 0 \
+						:
+							gc.attack(unit.id, enemy.id)
+							for u in adjacent(
+								location[enemy.id].map_location(),
+								2,
+								lambda u: True
+							):
+								health[u.id] = gc.unit(u.id).health \
+									if gc.can_sense_unit(u.id) else 0
 							break
 
 				# try to replicate
