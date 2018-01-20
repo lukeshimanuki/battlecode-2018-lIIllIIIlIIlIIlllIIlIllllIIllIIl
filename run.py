@@ -19,10 +19,10 @@ print("pystarted")
 random.seed(3142)
 
 gc.reset_research()
-gc.queue_research(bc.UnitType.Ranger)
+gc.queue_research(bc.UnitType.Healer)
+#gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
-#gc.queue_research(bc.UnitType.Healer)
 #gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Mage)
@@ -197,12 +197,19 @@ except Exception as e:
 	traceback.print_exc()
 	mdistances = None
 def mdist(ml1, ml2):
-	if not mdistances:
-		return ml1.distance_squared_to(ml2)
-	dist = mdistances[ml_pair_hash(ml1, ml2)]
-	if dist == 2501:
-		return max_path_length ** 2 + ml1.distance_squared_to(ml2)
-	return dist ** 2
+	try:
+		if not mdistances:
+			return ml1.distance_squared_to(ml2)
+		if not on_pmap(ml1) or not on_pmap(ml2):
+			return max_path_length ** 2 + ml1.distance_squared_to(ml2)
+		dist = mdistances[ml_pair_hash(ml1, ml2)]
+		if dist == 2501:
+			return max_path_length ** 2 + ml1.distance_squared_to(ml2)
+		return dist ** 2
+	except Exception as e:
+		print("{} {}".format(ml1, ml2))
+		print('error:', e)
+		traceback.print_exc()
 
 if planet == bc.Planet.Earth:
 	estructures.update({
@@ -242,6 +249,9 @@ runtimes = []
 
 ran_out_of_time = False
 printed_ran_out_of_time = False
+
+karbonite = None
+overcharged = None
 
 while True:
 	def rprint(string):
@@ -336,6 +346,11 @@ while True:
 		})
 		estructuresv = list(estructures.values())
 		estructuresv_eunits = estructuresv + eunits
+
+		# overcharge priority
+		can_overcharge = gc.research_info().get_level(h) >= 3
+		opriority = [m, k, r, w, h]
+		ounits = [ally for ut in opriority for ally in dunits[ateam][ut]]
 
 		if len(dunits[ateam][w]) < min_num_workers \
 			and (len(buildQueue) == 0 or buildQueue[0] != w) \
@@ -585,19 +600,24 @@ while True:
 		}
 		kearth -= to_remove
 
-		for utt in [t, f, r, m, k, h, w]:
+		overcharged = []
+
+		for utt in [t, f, r, m, k, w, h]:
 			if gc.get_time_left_ms() < 1000:
 				ran_out_of_time = True
 				break
 
-			for unit in dunits[ateam][utt]:
+			def run_unit(unit):
+				global karbonite
+				global overcharged
+
 				if not location[unit.id].is_on_map():
-					continue
+					return
 
 				if not gc.can_sense_unit(unit.id):
 					# must have been destroyed this turn
 					health[unit.id] = 0
-					continue
+					return
 
 				unit = gc.unit(unit.id)
 				location[unit.id] = unit.location
@@ -801,6 +821,7 @@ while True:
 						gc.harvest(unit.id, d)
 						w_is_busy = True
 
+				# heal
 				if ut == h and gc.is_heal_ready(unit.id):
 					for ally in hunits:
 						if location[unit.id].is_within_range( \
@@ -809,6 +830,39 @@ while True:
 						) and health[ally.id] > 0:
 							gc.heal(unit.id, ally.id)
 							health[ally.id] = gc.unit(ally.id).health
+							break
+
+				# overcharge someone who has attacked or used ability
+				if ut == h and unit.ability_heat() < 10 and can_overcharge:
+					for ally in ounits:
+						if location[unit.id].is_within_range( \
+							unit.ability_range(), \
+							location[ally.id] \
+						) and health[ally.id] > 0 and ( \
+							ally.ability_heat() > 10 or \
+							ally.attack_heat() > 10) \
+						:
+							try:
+								gc.overcharge(unit.id, ally.id)
+								overcharged.append(ally)
+							except:
+								pass
+							break
+
+				# overcharge someone who has moved
+				if ut == h and unit.ability_heat() < 10 and can_overcharge:
+					for ally in ounits:
+						if location[unit.id].is_within_range( \
+							unit.ability_range(), \
+							location[ally.id] \
+						) and health[ally.id] > 0 and ( \
+							ally.movement_heat() > 10) \
+						:
+							try:
+								gc.overcharge(unit.id, ally.id)
+								overcharged.append(ally)
+							except:
+								pass
 							break
 
 				# update roam
@@ -938,6 +992,20 @@ while True:
 						roam_directions[unit.id] = random.choice(directions)
 						roam_time[unit.id] = 20
 				update_sunk_danger(unit, location[unit.id].map_location())
+
+			for unit in dunits[ateam][utt]:
+				try:
+					run_unit(unit)
+				except Exception as e:
+					print('error:', e)
+					traceback.print_exc()
+
+		for unit in overcharged:
+			try:
+				run_unit(unit)
+			except Exception as e:
+				print('error:', e)
+				traceback.print_exc()
 
 		gcollector.collect()
 
