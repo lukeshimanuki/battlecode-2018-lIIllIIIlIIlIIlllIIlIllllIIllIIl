@@ -6,6 +6,8 @@ import sys
 import traceback
 import collections
 import enum
+import array
+import gc as gcollector
 
 print("pystarting")
 
@@ -70,9 +72,10 @@ def uhml(tup):
 def filter(data, f):
 	return [d for d in data if f]
 
-aggressive_attacker_count = 50
+aggressive_attacker_count = 30
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
+max_path_length = 30
 
 buildQueue = collections.deque(initialBuildQueue)
 
@@ -115,6 +118,91 @@ estructures = dict()
 
 planet = gc.planet()
 pmap = gc.starting_map(planet)
+pmap_width = pmap.width
+pmap_height = pmap.height
+
+# make sure x is width and y is height
+assert pmap.on_map(bc.MapLocation(planet, pmap.width - 1, pmap.height - 1))
+
+mdistances = None
+def cantor_pair(a, b):
+	return int((a + b) * (a + b + 1) / 2 + b)
+def ml_pair_hash_raw(ml1, ml2):
+	c = ml1.x
+	c *= pmap.height
+	c += ml1.y
+	c *= pmap.width
+	c += ml2.x
+	c *= pmap.height
+	c += ml2.y
+	#a = cantor_pair(ml1.x, ml1.y)
+	#b = cantor_pair(ml2.x, ml2.y)
+	#c = cantor_pair(a, b)
+	return c
+def ml_pair_hash(ml1, ml2): # symmetric
+	#return min(ml_pair_hash_raw(ml1, ml2), ml_pair_hash_raw(ml2, ml1))
+	return ml_pair_hash_raw(ml1, ml2)
+def ml_hash(ml):
+	return ml.x * pmap.height + ml.y
+def gen_x(n, x):
+    for i in range(n):
+        yield x
+def on_pmap(ml):
+	return ml.x >= 0 and ml.y >= 0 and ml.x < pmap_width and ml.y < pmap_height
+try:
+	# all pairs distances
+	start = time.time()
+	max_ml = bc.MapLocation(planet, pmap.width - 1, pmap.height - 1)
+	mdistances = array.array('I', gen_x(ml_pair_hash(max_ml, max_ml) + 1, 2501))
+	print("pathfinding using array of size {}".format(len(mdistances)))
+	sys.stdout.flush()
+	passable = array.array('b', gen_x(ml_hash(max_ml) + 1, 0))
+	print("passable array of size {}".format(len(passable)))
+	sys.stdout.flush
+	for x in range(pmap.width):
+		for y in range(pmap.height):
+			ml = bc.MapLocation(planet, x, y)
+			c = ml_hash(ml)
+			passable[c] = 1 if pmap.is_passable_terrain_at(ml) else 0
+	next_ml = collections.deque()
+	# BFS from each starting point
+	for x in range(pmap.width):
+		for y in range(pmap.height):
+			ml = bc.MapLocation(planet, x, y)
+			#assert pmap.on_map(ml)
+			# find distances
+			if pmap.is_passable_terrain_at(ml):
+				mdistances[ml_pair_hash(ml, ml)] = 0
+				next_ml.append(ml)
+
+				while len(next_ml) > 0:
+					base_ml = next_ml.popleft()
+					base_dist = mdistances[ml_pair_hash(ml, base_ml)]
+					if base_dist > max_path_length:
+						break
+					for d in directions:
+						ml2 = base_ml.add(d)
+						c = ml_pair_hash(ml, ml2)
+
+						if on_pmap(ml2) and \
+							passable[ml_hash(ml2)] == 1 and \
+							mdistances[c] == 2501 \
+						:
+							mdistances[c] = base_dist + 1
+							next_ml.append(ml2)
+	end = time.time()
+	print("pathfinding took time {}".format(end - start))
+except Exception as e:
+	print('error:', e)
+	traceback.print_exc()
+	mdistances = None
+def mdist(ml1, ml2):
+	if not mdistances:
+		return ml1.distance_squared_to(ml2)
+	dist = mdistances[ml_pair_hash(ml1, ml2)]
+	if dist == 2501:
+		return max_path_length ** 2 + ml1.distance_squared_to(ml2)
+	return dist ** 2
 
 if planet == bc.Planet.Earth:
 	estructures.update({
@@ -335,13 +423,13 @@ while True:
 				and location[unit.id].map_location().is_within_range(r, ml)
 			]
 
-		def dist_to_nearest(units, ml, f, stop_min_dist=0):
+		def dist_to_nearest(units, ml, f, stop_min_dist=0, distance= \
+			lambda ml1, ml2: ml1.distance_squared_to(ml2)
+		):
 			min_dist = None
 			for unit in units:
 				if location[unit.id].is_on_map() and f(unit):
-					dist = location[unit.id]. \
-						map_location(). \
-						distance_squared_to(ml)
+					dist = distance(ml, location[unit.id].map_location())
 					if not min_dist or dist < min_dist:
 						min_dist = dist
 						if dist < stop_min_dist:
@@ -407,6 +495,7 @@ while True:
 			key=lambda a: 0 if karbonite < f.blueprint_cost() else
 				-max(
 					-1 if
+						not a.location.is_on_map() or
 						not pmap.on_map(add(a, d)) or
 						not pmap.is_passable_terrain_at(add(a, d))
 					else sum([
@@ -499,11 +588,20 @@ while True:
 		for utt in [t, f, r, m, k, h, w]:
 			if gc.get_time_left_ms() < 1000:
 				ran_out_of_time = True
-				continue
+				break
 
 			for unit in dunits[ateam][utt]:
 				if not location[unit.id].is_on_map():
 					continue
+
+				if not gc.can_sense_unit(unit.id):
+					# must have been destroyed this turn
+					health[unit.id] = 0
+					continue
+
+				unit = gc.unit(unit.id)
+				location[unit.id] = unit.location
+				health[unit.id] = unit.health
 
 				ut = unit.unit_type
 
@@ -651,18 +749,19 @@ while True:
 							adjacent_b,
 							key=value
 						)
-						if gc.unit(a.id).structure_is_built():
-							gc.repair(unit.id, a.id)
-							health[a.id] += unit.worker_repair_health()
-						else:
-							gc.build(unit.id, a.id)
-							health[a.id] += unit.worker_build_health()
+						if gc.can_sense_unit(a.id):
+							if gc.unit(a.id).structure_is_built():
+								gc.repair(unit.id, a.id)
+								health[a.id] += unit.worker_repair_health()
+							else:
+								gc.build(unit.id, a.id)
+								health[a.id] += unit.worker_build_health()
 
-						health[a.id] = min(
-							a.max_health,
-							health[a.id],
-						)
-						w_is_busy = True
+							health[a.id] = min(
+								a.max_health,
+								health[a.id],
+							)
+							w_is_busy = True
 
 				# build factory / rocket
 				if ut == w and not w_is_busy and karbonite > min( \
@@ -694,9 +793,9 @@ while True:
 				if ut == w and not w_is_busy:
 					d = max(
 						list(bc.Direction),
-						key=lambda d: gc.karbonite_at(add(unit, d))
-							if pmap.on_map(add(unit, d))
-							else -1
+						key=lambda d: -1 if not pmap.on_map(add(unit, d)) or
+							not gc.can_sense_location(add(unit, d))
+							else gc.karbonite_at(add(unit, d))
 					)
 					if gc.karbonite_at(add(unit, d)) > 0:
 						gc.harvest(unit.id, d)
@@ -793,12 +892,16 @@ while True:
 						None if ut != h else lambda d: -dist_to_nearest(
 							hunits,
 							add(unit, d),
-							lambda u: True
+							lambda u: True,
+							0,
+							mdist
 						),
 						None if ut != w else lambda d: -dist_to_nearest(
 							bunits,
 							add(unit, d),
-							lambda u: True
+							lambda u: True,
+							0,
+							mdist
 						),
 						None if ut not in [k,r,m] else
 							lambda d: min(-dist_to_nearest(
@@ -808,10 +911,8 @@ while True:
 								unit.attack_range()
 							), -unit.attack_range()),
 						None if ut != w else
-							lambda d: min([
-								location[unit.id].
-								map_location().
-								distance_squared_to(ml)
+							lambda d: -min([
+								mdist(uml, location[unit.id].map_location())
 								for ml in deposits
 							] + [float('5000')]),
 
@@ -837,6 +938,8 @@ while True:
 						roam_directions[unit.id] = random.choice(directions)
 						roam_time[unit.id] = 20
 				update_sunk_danger(unit, location[unit.id].map_location())
+
+		gcollector.collect()
 
 		end = time.time()
 		runtimes.append(end - start)
