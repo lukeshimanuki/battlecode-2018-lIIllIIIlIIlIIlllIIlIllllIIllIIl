@@ -9,6 +9,8 @@ import enum
 import array
 import gc as gcollector
 
+#gcollector.disable()
+
 print("pystarting")
 
 gc = bc.GameController()
@@ -20,10 +22,10 @@ prev_time = dict()
 runtime = collections.defaultdict(int)
 def atime(i):
 	global prev_time
-	#prev_time[i] = time.time()
+	prev_time[i] = time.time()
 	pass
 def btime(i):
-	#runtime[i] += time.time() - prev_time[i]
+	runtime[i] += time.time() - prev_time[i]
 	pass
 
 ateam = gc.team()
@@ -1348,7 +1350,8 @@ while True:
 		btime(30)
 		atime(40)
 
-		#gcollector.collect()
+		if round_num % 10 == 0:
+			gcollector.collect()
 
 		end = time.time()
 		runtimes.append(end - start)
