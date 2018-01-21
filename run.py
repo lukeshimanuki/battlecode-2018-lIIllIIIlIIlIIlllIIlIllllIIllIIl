@@ -20,9 +20,11 @@ prev_time = dict()
 runtime = collections.defaultdict(int)
 def atime(i):
 	global prev_time
-	prev_time[i] = time.time()
+	#prev_time[i] = time.time()
+	pass
 def btime(i):
-	runtime[i] += time.time() - prev_time[i]
+	#runtime[i] += time.time() - prev_time[i]
+	pass
 
 ateam = gc.team()
 eteam = bc.Team.Blue if ateam == bc.Team.Red else bc.Team.Red
@@ -33,14 +35,14 @@ gc.reset_research()
 gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Healer)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Worker)
@@ -78,7 +80,7 @@ def desired_unit_ratio(round_num):
 		})
 	else:
 		return normalize_ratio({
-			r: 1,
+			r: 2,
 			k: 1,
 			m: 0,
 			h: 1,
@@ -223,7 +225,7 @@ try:
 	end = time.time()
 	print("pathfinding took time {}".format(end - start))
 except Exception as e:
-	print('error:', e)
+	print("error: {}".format(e))
 	traceback.print_exc()
 	mdistances = None
 def mdist(ml1, ml2):
@@ -238,7 +240,7 @@ def mdist(ml1, ml2):
 		return dist ** 2
 	except Exception as e:
 		print("{} {}".format(ml1, ml2))
-		print('error:', e)
+		print("error: {}".format(e))
 		traceback.print_exc()
 
 if planet == bc.Planet.Earth:
@@ -394,7 +396,6 @@ while True:
 			return ally.ability_heat() >= 10 or \
 				ally.attack_heat() >= 10 or \
 				ally.movement_heat() >= 10
-		can_overcharge = gc.research_info().get_level(h) >= 3
 		opriority = [
 			lambda u: u.unit_type in [m,k] and u.ability_heat() >= 10,
 			lambda u: u.unit_type in [m,k,r] and u.attack_heat() >= 10,
@@ -402,6 +403,8 @@ while True:
 			lambda u: u.unit_type in [m,k] and u.movement_heat() >= 10,
 			lambda u: u.unit_type in [h,w,r] and u.movement_heat() >= 10,
 		]
+		can_overcharge = gc.research_info().get_level(h) >= 3
+		can_blink = gc.research_info().get_level(m) >= 4
 		can_javelin = gc.research_info().get_level(h) >= 3
 		ounits = [[]] * len(opriority)
 		#ounits = [
@@ -842,8 +845,8 @@ while True:
 							break
 
 				# mage attack
-				if ut == m and gc.is_attack_ready(unit.id):
-					for enemy in meunits:
+				def mattack(units):
+					for enemy in units:
 						if can_attack(unit, location[enemy.id].map_location()) \
 							and health[enemy.id] > 0 \
 						:
@@ -852,10 +855,52 @@ while True:
 								location[enemy.id].map_location(),
 								2,
 								lambda u: True
-							):
+							) + [enemy]:
 								health[u.id] = gc.unit(u.id).health \
 									if gc.can_sense_unit(u.id) else 0
-							break
+							return enemy
+					return None
+				if ut == m:
+					mcan_attack = gc.is_attack_ready(unit.id)
+					if mcan_attack:
+						rmeunits = [
+							e for e in meunits
+							if health[e.id] > 0 \
+							and location[e.id].map_location().is_within_range(
+								int((unit.attack_range()**.5 +
+								unit.ability_range()**.5 + 0) ** 2),
+								uml
+							)
+						]
+
+						mattack(rmeunits)
+
+						if unit.ability_heat() < 10 and can_blink:
+							bml = gc.all_locations_within(uml, unit.ability_range())
+
+							if gc.is_attack_ready(unit.id):
+								# no enemies in range -> blink forwards and attack
+								for enemy in rmeunits:
+									for ml in bml:
+										if ml.is_within_range( \
+											unit.attack_range(), \
+											location[enemy.id].map_location() \
+										):
+											gc.blink(unit.id, ml)
+											ulocation(unit, loc)
+											uml = ml
+											if not mattack([enemy]):
+												rprint('blink-attack failed')
+							else:
+								# enemies in range -> blink back
+								ml = max(bml, key=lambda ml: dist_to_nearest(
+									eattackers,
+									ml,
+									lambda u: True
+								))
+								gc.blink(unit.id, ml)
+								ulocation(unit, ml)
+								uml = ml
 
 				# knight javelin
 				if ut == k and gc.is_javelin_ready(unit.id) and can_javelin:
@@ -1050,7 +1095,7 @@ while True:
 					len(dunits[ateam][k]) < aggressive_attacker_count \
 					else aggressive_threshold
 				aggressive = health[unit.id] >= unit.max_health * dmg_thresh
-				if ut == k:
+				if ut in [k,m]:
 					aggressive = True
 
 				btime(18)
@@ -1262,14 +1307,14 @@ while True:
 				try:
 					run_unit(unit)
 				except Exception as e:
-					print('error:', e)
+					rprint("error: {}".format(e))
 					traceback.print_exc()
 
 		for unit in overcharged:
 			try:
 				run_unit(unit)
 			except Exception as e:
-				print('error:', e)
+				rprint("error: {}".format(e))
 				traceback.print_exc()
 
 		atime(30)
@@ -1323,7 +1368,7 @@ while True:
 		btime(40)
 
 	except Exception as e:
-		print('error:', e)
+		rprint("error: {}".format(e))
 		traceback.print_exc()
 
 	gc.next_turn()
