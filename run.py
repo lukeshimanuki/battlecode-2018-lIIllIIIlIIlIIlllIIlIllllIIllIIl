@@ -19,8 +19,12 @@ print("pystarted")
 random.seed(3142)
 
 gc.reset_research()
+gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
+gc.queue_research(bc.UnitType.Knight)
+gc.queue_research(bc.UnitType.Knight)
+gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Healer)
 #gc.queue_research(bc.UnitType.Mage)
 #gc.queue_research(bc.UnitType.Mage)
@@ -28,9 +32,6 @@ gc.queue_research(bc.UnitType.Healer)
 #gc.queue_research(bc.UnitType.Mage)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Ranger)
-gc.queue_research(bc.UnitType.Ranger)
-gc.queue_research(bc.UnitType.Knight)
-gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Worker)
 gc.queue_research(bc.UnitType.Worker)
 gc.queue_research(bc.UnitType.Worker)
@@ -59,7 +60,7 @@ def normalize_ratio(ratios):
 def desired_unit_ratio(round_num):
 	if round_num < 200:
 		return normalize_ratio({
-			r: 1,
+			r: 2,
 			k: 0,
 			m: 0,
 			h: 1,
@@ -67,8 +68,9 @@ def desired_unit_ratio(round_num):
 	else:
 		return normalize_ratio({
 			r: 1,
-			h: 1,
+			k: 1,
 			m: 0,
+			h: 1,
 		})
 
 def hml(ml):
@@ -81,7 +83,7 @@ def uhml(tup):
 def filter(data, f):
 	return [d for d in data if f]
 
-aggressive_attacker_count = 30
+aggressive_attacker_count = 50
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
 max_path_length = 30
@@ -199,6 +201,10 @@ try:
 						:
 							mdistances[c] = base_dist + 1
 							next_ml.append(ml2)
+		if gc.get_time_left_ms() < 8000:
+			mdistances = None
+			print('pathfinding took too long')
+			break
 	end = time.time()
 	print("pathfinding took time {}".format(end - start))
 except Exception as e:
@@ -239,6 +245,7 @@ for ml in gc.all_locations_within(
 		for ml2 in mars_locations
 	):
 		mars_locations.append(ml)
+mars_locations = mars_locations * 50
 
 asteroids = dict()
 if planet == bc.Planet.Mars:
@@ -312,16 +319,17 @@ while True:
 		}
 
 		def ulocation(unit, loc):
-			id = unit.id
-			if id in location:
-				ploc = location[id]
+			uid = unit.id
+			if uid in location:
+				ploc = location[uid]
 				if ploc.is_on_map():
 					ml = ploc.map_location()
-					munits.pop((ml.x, ml.y))
+					if (ml.x, ml.y) in munits:
+						munits.pop((ml.x, ml.y))
 			if loc.is_on_map():
 				ml = loc.map_location()
 				munits[(ml.x, ml.y)] = unit
-			location[id] = loc
+			location[uid] = loc
 
 		# remove invalid targets
 		#targets = [t for t in targets if all([v(t) for v in t.valid])]
@@ -362,10 +370,26 @@ while True:
 		estructuresv_eunits = estructuresv + eunits
 
 		# overcharge priority
+		def needs_overcharge(ally):
+			return ally.ability_heat() >= 10 or \
+				ally.attack_heat() >= 10 or \
+				ally.movement_heat() >= 10
 		can_overcharge = gc.research_info().get_level(h) >= 3
-		opriority = [m, k, r, w, h]
-		ounits = [ally for ut in opriority for ally in dunits[ateam][ut]]
-
+		opriority = [
+			lambda u: u.unit_type in [m,k] and u.ability_heat() >= 10,
+			lambda u: u.unit_type in [m,k,r] and u.attack_heat() >= 10,
+			lambda u: u.unit_type in [h] and u.attack_heat() >= 10,
+			lambda u: u.unit_type in [m,k] and u.movement_heat() >= 10,
+			lambda u: u.unit_type in [h,w,r] and u.movement_heat() >= 10,
+		]
+		can_javelin = gc.research_info().get_level(h) >= 3
+		ounits = [[]] * len(opriority)
+		#ounits = [
+		#	[
+		#		u for u in aunits
+		#		if location[u.id].is_on_map() and fn(u)
+		#	] for fn in opriority
+		#]
 		if len(dunits[ateam][w]) < min_num_workers \
 			and (len(buildQueue) == 0 or buildQueue[0] != w) \
 			and all([u.ability_cooldown() < 20 for u in dunits[ateam][w]]) \
@@ -462,7 +486,7 @@ while True:
 					if not min_dist or dist < min_dist:
 						min_dist = dist
 						if dist < stop_min_dist:
-							return dist
+							return stop_min_dist
 
 			if not min_dist:
 				return max_path_length ** 2 + 2501
@@ -562,10 +586,10 @@ while True:
 		# sort enemies in order of who we want to attack
 		enemy_attack_order = [
 			m,
+			h,
 			r,
 			k,
 			f,
-			h,
 			w,
 			t,
 		]
@@ -626,7 +650,7 @@ while True:
 		overcharged = []
 		built_rocket = False
 
-		for utt in [t, f, r, m, k, w, h]:
+		for utt in [t, f, m, k, w, r, h]:
 			if gc.get_time_left_ms() < 1000:
 				ran_out_of_time = True
 				break
@@ -642,7 +666,7 @@ while True:
 					return
 
 				unit = gc.unit(unit.id)
-				location[unit.id] = unit.location
+				ulocation(unit, unit.location)
 				health[unit.id] = unit.health
 
 				if not location[unit.id].is_on_map():
@@ -680,8 +704,7 @@ while True:
 							if gc.can_launch_rocket(unit.id, ml):
 								gc.launch_rocket(unit.id, ml)
 								mars_locations.pop()
-								location[unit.id] = gc.unit(unit.id).location
-								return
+								ulocation(unit, gc.unit(unit.id).location)
 					else:
 						udirections = sorted(directions, key=lambda d:
 							add(unit, d).distance_squared_to(ecentroid)
@@ -776,6 +799,20 @@ while True:
 							):
 								health[u.id] = gc.unit(u.id).health \
 									if gc.can_sense_unit(u.id) else 0
+							break
+
+				# knight javelin
+				if ut == k and gc.is_javelin_ready(unit.id) and can_javelin:
+					for enemy in veunits:
+						if location[enemy.id].is_on_map() and \
+							uml.is_within_range( \
+								unit.ability_range(), \
+								location[enemy.id].map_location() \
+							) and health[enemy.id] > 0 \
+						:
+							gc.javelin(unit.id, enemy.id)
+							health[enemy.id] = gc.unit(enemy.id).health \
+								if health[enemy.id] > unit.damage() else 0
 							break
 
 				# try to replicate
@@ -910,41 +947,28 @@ while True:
 							unit.attack_range(), \
 							location[ally.id] \
 						) and health[ally.id] > 0:
-							gc.heal(unit.id, ally.id)
-							health[ally.id] = gc.unit(ally.id).health
-							break
+							if gc.can_heal(unit.id, ally.id):
+								gc.heal(unit.id, ally.id)
+								health[ally.id] = gc.unit(ally.id).health
+								break
 
-				# overcharge someone who has attacked or used ability
+				# overcharge
 				if ut == h and unit.ability_heat() < 10 and can_overcharge:
-					for ally in ounits:
-						if location[unit.id].is_within_range( \
-							unit.ability_range(), \
-							location[ally.id] \
-						) and health[ally.id] > 0 and ( \
-							ally.ability_heat() > 10 or \
-							ally.attack_heat() > 10) \
-						:
-							try:
-								gc.overcharge(unit.id, ally.id)
-								overcharged.append(ally)
-							except:
-								pass
-							break
-
-				# overcharge someone who has moved
-				if ut == h and unit.ability_heat() < 10 and can_overcharge:
-					for ally in ounits:
-						if location[unit.id].is_within_range( \
-							unit.ability_range(), \
-							location[ally.id] \
-						) and health[ally.id] > 0 and ( \
-							ally.movement_heat() > 10) \
-						:
-							try:
-								gc.overcharge(unit.id, ally.id)
-								overcharged.append(ally)
-							except:
-								pass
+					for l in ounits:
+						used_overcharge = False
+						for ally in l:
+							if location[unit.id].is_within_range( \
+								unit.ability_range(), \
+								location[ally.id] \
+							) and health[ally.id] > 0 and needs_overcharge(ally):
+								try:
+									gc.overcharge(unit.id, ally.id)
+									overcharged.append(gc.unit(ally.id))
+								except:
+									pass
+								used_overcharge = True
+								break
+						if used_overcharge:
 							break
 
 				# update roam
@@ -961,6 +985,8 @@ while True:
 					len(dunits[ateam][k]) < aggressive_attacker_count \
 					else aggressive_threshold
 				aggressive = health[unit.id] >= unit.max_health * dmg_thresh
+				if ut == k:
+					aggressive = True
 
 				# try to move
 				# greedy minimize marginal danger
@@ -968,9 +994,10 @@ while True:
 				if gc.is_move_ready(unit.id) \
 					and not (ut == w and w_is_busy) \
 				:
-					direction = pickMoveDirection(directions, [
+					direction = pickMoveDirection(list(bc.Direction), [
 						# validity
-						lambda d: gc.can_move(unit.id, d),
+						lambda d: gc.can_move(unit.id, d) or
+							d == bc.Direction.Center,
 
 						# micro
 						# be able to attack someone if aggressive
@@ -981,8 +1008,16 @@ while True:
 								unit.attack_range(),
 								lambda e: can_attack(unit, add(e, d.opposite()))
 							),
+						# be able to heal someone
+						None if ut != h else lambda d: -dist_to_nearest(
+							hunits,
+							add(unit, d),
+							lambda u: True,
+							unit.attack_range(),
+							mdist
+						),
 						# avoid getting attacked
-						lambda d, ff=filter(
+						None if ut in [k] else lambda d, ff=filter(
 							eattackers,
 							lambda e: location[e.id].is_within_range(
 								(e.attack_range()**.5 + 2) ** 2,
@@ -1002,8 +1037,16 @@ while True:
 							lambda e: True,
 							ff
 						),
-						# retreat if not aggressive
-						None if ut in [k,m,r] and aggressive else lambda d:
+						# be able to see someone if ranger and aggressive
+						None if not (ut in [r] and aggressive) else
+							lambda d: exists_nearby(
+								eunits,
+								add(unit, d),
+								unit.vision_range,
+								lambda e: True
+							),
+						# retreat
+						None if ut not in [m,w,h] else lambda d:
 							dist_to_nearest(
 								eattackers,
 								add(unit, d),
@@ -1029,7 +1072,8 @@ while True:
 										e.vision_range,
 										add(unit, d)
 									) and
-									e.attack_range() < unit.attack_range()
+									e.attack_range() < unit.attack_range() and
+									e.unit_type in [k,m]
 							),
 						#None if ut not in [k,r,m] else
 						#	lambda d: dist_to_nearest(
@@ -1039,13 +1083,6 @@ while True:
 						#	),
 
 						# macro
-						None if ut != h else lambda d: -dist_to_nearest(
-							hunits,
-							add(unit, d),
-							lambda u: True,
-							0,
-							mdist
-						),
 						None if ut != w else lambda d: -dist_to_nearest(
 							bunits,
 							add(unit, d),
@@ -1072,10 +1109,32 @@ while True:
 								for ml in deposits
 							] + [float('5000')]),
 
+						# knight avoiding damage is low priority
+						None if ut not in [k] else lambda d, ff=filter(
+							eattackers,
+							lambda e: location[e.id].is_within_range(
+								(e.attack_range()**.5 + 2) ** 2,
+								location[unit.id]
+							) and not location[e.id].is_within_range(
+								max(0, (e.attack_range()**.5 - 2)) ** 2,
+								location[unit.id]
+							)
+						): -marginal_danger(
+							unit,
+							add(unit, d),
+							# ignore enemies with the same range
+							# unless low on health
+							#lambda e: not aggressive \
+							#	or ut not in [r,m]
+							#	or e.attack_range() != unit.attack_range()
+							lambda e: True,
+							ff
+						),
+
 						# spread
 						lambda d: -len(adjacent(
 							add(unit, d),
-							1,
+							2,
 							lambda u: u.id != unit.id and u.team == ateam
 						)),
 
@@ -1083,7 +1142,9 @@ while True:
 						lambda d: dot(rd, d)
 					])
 
-					if direction and gc.can_move(unit.id, direction):
+					if direction and gc.can_move(unit.id, direction) and \
+						direction != bc.Direction.Center \
+					:
 						gc.move_robot(unit.id, direction)
 						ulocation(unit, gc.unit(unit.id).location)
 
@@ -1093,7 +1154,18 @@ while True:
 					:
 						roam_directions[unit.id] = random.choice(directions)
 						roam_time[unit.id] = 20
-				update_sunk_danger(unit, location[unit.id].map_location())
+
+				if gc.can_sense_unit(unit.id):
+					u = gc.unit(unit.id)
+					health[u.id] = u.health
+					ulocation(u, u.location)
+					if u.location.is_on_map():
+						update_sunk_danger(unit, u.location.map_location())
+					for i in range(len(opriority)):
+						if opriority[i](u):
+							ounits[i].append(u)
+				else:
+					health[unit.id] = 0
 
 			for unit in dunits[ateam][utt]:
 				try:
