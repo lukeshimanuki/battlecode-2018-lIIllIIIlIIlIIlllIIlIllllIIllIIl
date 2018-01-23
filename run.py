@@ -37,14 +37,14 @@ gc.reset_research()
 gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-gc.queue_research(bc.UnitType.Knight)
-gc.queue_research(bc.UnitType.Knight)
-gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Healer)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Mage)
+gc.queue_research(bc.UnitType.Knight)
+gc.queue_research(bc.UnitType.Knight)
+gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Worker)
@@ -73,7 +73,7 @@ def normalize_ratio(ratios):
 	}
 
 def desired_unit_ratio(round_num):
-	if round_num < 200:
+	if round_num < 300:
 		return normalize_ratio({
 			r: 2,
 			k: 0,
@@ -105,7 +105,7 @@ min_num_factories = 5
 max_path_length = 2500
 min_path_length = 20
 max_path_time = 1.0
-force_move = True
+force_move = False
 
 buildQueue = collections.deque(initialBuildQueue)
 
@@ -1244,12 +1244,18 @@ while True:
 				:
 					dont_move_out_of_time
 
+				# don't move if attacking
+				dont_move_attacked = False
+				if ut in [r,h] and gc.unit(unit.id).attack_heat() >= 10:
+					dont_move_attacked = True
+
 				# try to move
 				# greedy minimize marginal danger
 				# given movements of prior robots
 				if gc.is_move_ready(unit.id) \
 					and not (ut == w and w_is_busy) \
 					and not dont_move_out_of_time \
+					and not dont_move_attacked \
 				:
 					direction = pickMoveDirection(
 						directions if force_move else list(bc.Direction), 
@@ -1357,11 +1363,15 @@ while True:
 						#	unit.attack_range(),
 						#	mdist
 						#), -unit.attack_range()),
-						None if ut not in [k,r,m] or planet != bc.Planet.Earth else
+						None if ut not in [k,r,m,h] or
+							planet != bc.Planet.Earth or
+							round_num < 600 else
 							lambda d: -dist_to_nearest(
 								dunits[ateam][t],
 								add(unit, d),
-								lambda a: location[a.id].is_on_map()
+								lambda a: location[a.id].is_on_map(),
+								1,
+								mdist
 							),
 						None if ut not in [k,r,m] else
 							lambda d: min(-dist_to_nearest(
@@ -1391,7 +1401,7 @@ while True:
 						#),
 
 						# spread
-						lambda d: -len(adjacent(
+						None if ut not in [] else lambda d: -len(adjacent(
 							add(unit, d),
 							2,
 							lambda u: u.id != unit.id and u.team == ateam
