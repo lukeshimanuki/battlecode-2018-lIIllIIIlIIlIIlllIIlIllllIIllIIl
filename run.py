@@ -101,7 +101,10 @@ def filter(data, f):
 aggressive_attacker_count = 40
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
-max_path_length = 30
+min_num_factories = 5
+max_path_length = 2500
+min_path_length = 20
+max_path_time = 1.0
 force_move = True
 
 buildQueue = collections.deque(initialBuildQueue)
@@ -155,23 +158,39 @@ assert pmap.on_map(bc.MapLocation(planet, pmap.width - 1, pmap.height - 1))
 mdistances = None
 def cantor_pair(a, b):
 	return int((a + b) * (a + b + 1) / 2 + b)
-def ml_pair_hash_raw(ml1, ml2):
-	c = ml1.x
-	c *= pmap.height
-	c += ml1.y
-	c *= pmap.width
-	c += ml2.x
-	c *= pmap.height
-	c += ml2.y
+#def ml_pair_hash_raw(ml1, ml2):
+#	c = ml1.x
+#	c *= pmap.height
+#	c += ml1.y
+#	c *= pmap.width
+#	c += ml2.x
+#	c *= pmap.height
+#	c += ml2.y
+#	#a = cantor_pair(ml1.x, ml1.y)
+#	#b = cantor_pair(ml2.x, ml2.y)
+#	#c = cantor_pair(a, b)
+#	return c
+def ml_pair_hash(x1, y1, x2, y2):
+	#atime('ml_pair_hash')
+	return (x1 << 18) | (y1 << 12) | (x2 << 6) | y2
+	#c *= pmap.height
+	#c += y1
+	#c *= pmap.width
+	#c += x2
+	#c *= pmap.height
+	#c += y2
+	#btime('ml_pair_hash')
 	#a = cantor_pair(ml1.x, ml1.y)
 	#b = cantor_pair(ml2.x, ml2.y)
 	#c = cantor_pair(a, b)
-	return c
-def ml_pair_hash(ml1, ml2): # symmetric
-	#return min(ml_pair_hash_raw(ml1, ml2), ml_pair_hash_raw(ml2, ml1))
-	return ml_pair_hash_raw(ml1, ml2)
+	#return c
+#def ml_pair_hash(ml1, ml2): # symmetric
+#	#return min(ml_pair_hash_raw(ml1, ml2), ml_pair_hash_raw(ml2, ml1))
+#	return ml_pair_hash_raw(ml1, ml2)
+def ml_hash_c(x, y):
+	return (x << 6) | y
 def ml_hash(ml):
-	return ml.x * pmap.height + ml.y
+	return ml_hash_c(ml.x, ml.y)
 def gen_x(n, x):
     for i in range(n):
         yield x
@@ -181,7 +200,11 @@ try:
 	# all pairs distances
 	start = time.time()
 	max_ml = bc.MapLocation(planet, pmap.width - 1, pmap.height - 1)
-	mdistances = array.array('I', gen_x(ml_pair_hash(max_ml, max_ml) + 1, 2501))
+	#mdistances = array.array('I', gen_x(ml_pair_hash(max_ml, max_ml) + 1, 2501))
+	mdistances = array.array('I', gen_x(ml_pair_hash(
+		pmap_width - 1, pmap_height - 1,
+		pmap_width - 1, pmap_height - 1,
+	) + 1, 2501))
 	print("pathfinding using array of size {}".format(len(mdistances)))
 	sys.stdout.flush()
 	passable = array.array('b', gen_x(ml_hash(max_ml) + 1, 0))
@@ -193,57 +216,139 @@ try:
 			c = ml_hash(ml)
 			passable[c] = 1 if pmap.is_passable_terrain_at(ml) else 0
 	next_ml = collections.deque()
-	# BFS from each starting point
-	for x in range(pmap.width):
-		for y in range(pmap.height):
-			ml = bc.MapLocation(planet, x, y)
-			#assert pmap.on_map(ml)
-			# find distances
-			if pmap.is_passable_terrain_at(ml):
-				mdistances[ml_pair_hash(ml, ml)] = 0
-				next_ml.append(ml)
+	## BFS from each starting point
+	#for x in range(pmap.width):
+	#	for y in range(pmap.height):
+	#		ml = bc.MapLocation(planet, x, y)
+	#		#assert pmap.on_map(ml)
+	#		# find distances
+	#		if pmap.is_passable_terrain_at(ml):
+	#			mdistances[ml_pair_hash(ml, ml)] = 0
+	#			next_ml.append(ml)
 
-				while len(next_ml) > 0:
-					if time.time() - start > 3:
-						break
-					base_ml = next_ml.popleft()
-					base_dist = mdistances[ml_pair_hash(ml, base_ml)]
-					if base_dist > max_path_length:
-						break
-					for d in directions:
-						ml2 = base_ml.add(d)
-						c = ml_pair_hash(ml, ml2)
+	#			while len(next_ml) > 0:
+	#				if time.time() - start > 3:
+	#					break
+	#				base_ml = next_ml.popleft()
+	#				base_dist = mdistances[ml_pair_hash(ml, base_ml)]
+	#				if base_dist > max_path_length:
+	#					break
+	#				for d in directions:
+	#					ml2 = base_ml.add(d)
+	#					c = ml_pair_hash(ml, ml2)
 
-						if on_pmap(ml2) and \
-							passable[ml_hash(ml2)] == 1 and \
-							mdistances[c] == 2501 \
+	#					if on_pmap(ml2) and \
+	#						passable[ml_hash(ml2)] == 1 and \
+	#						mdistances[c] == 2501 \
+	#					:
+	#						mdistances[c] = base_dist + 1
+	#						next_ml.append(ml2)
+	#			next_ml.clear()
+	#	if gc.get_time_left_ms() < 8000:
+	#		mdistances = None
+	#		print('pathfinding took too long')
+	#		break
+
+	s = array.array('b', gen_x(8 * pmap_width * pmap_height, 0))
+	ns = array.array('b', gen_x(8 * pmap_width * pmap_height, 0))
+	s_idx = 0
+	ns_idx = 0
+
+	for x in range(pmap_width):
+		for y in range(pmap_height):
+			if passable[ml_hash_c(x, y)] == 1:
+				mdistances[ml_pair_hash(x,y,x,y)] = 0
+				s[4 * s_idx + 0] = x
+				s[4 * s_idx + 1] = y
+				s[4 * s_idx + 2] = x
+				s[4 * s_idx + 3] = y
+				s_idx += 1
+
+	dd = (-1,0,1)
+	broke = False
+	for dist in range(1, max_path_length + 1):
+		ns_idx = 0
+		for i in range(s_idx):
+			x1 = s[4 * i + 0]
+			y1 = s[4 * i + 1]
+			bx2 = s[4 * i + 2]
+			by2 = s[4 * i + 3]
+			for dx in dd:
+				x2 = bx2 + dx
+				if x2 >= 0 and x2 < pmap_width:
+					for dy in dd:
+						#atime('loop')
+						y2 = by2 + dy
+						if (dx != 0 or dy != 0) \
+							and y2 >= 0 and y2 < pmap_height \
+							and passable[ml_hash_c(x2, y2)] == 1 \
+							and mdistances[ml_pair_hash( \
+								x1, y1, \
+								x2, y2 \
+							)] == 2501 \
 						:
-							mdistances[c] = base_dist + 1
-							next_ml.append(ml2)
-		if gc.get_time_left_ms() < 8000:
-			mdistances = None
-			print('pathfinding took too long')
+							#atime('cond')
+							mdistances[ml_pair_hash(x1, y1, x2, y2)] = dist
+							mdistances[ml_pair_hash(x2, y2, x1, y1)] = dist
+
+							if (ns_idx + 2) * 4 > len(ns):
+								ns.extend(gen_x(len(ns), 0))
+
+							ns[4 * ns_idx + 0] = x1
+							ns[4 * ns_idx + 1] = y1
+							ns[4 * ns_idx + 2] = x2
+							ns[4 * ns_idx + 3] = y2
+							ns[4 * ns_idx + 4] = x2
+							ns[4 * ns_idx + 5] = y2
+							ns[4 * ns_idx + 6] = x1
+							ns[4 * ns_idx + 7] = y1
+
+							ns_idx += 2
+							#btime('cond')
+						#btime('loop')
+
+		curr_time = time.time() - start
+
+		if ns_idx == 0:
+			print("found all paths in time {}".format(curr_time))
+			broke = True
 			break
-	end = time.time()
-	print("pathfinding took time {}".format(end - start))
+
+		if curr_time > max_path_time:
+			print("found paths up to length {} in time {}".format(
+				dist,
+				curr_time,
+			))
+			if dist < 10:
+				print('path lengths too short, reverting to euclidian')
+				mdistances = None
+			broke = True
+			break
+
+		# swap buffers
+		tmp_buffer = s
+		s = ns
+		s_idx = ns_idx
+		ns = tmp_buffer
+
+	if not broke:
+		print("found paths up to length {} in time {}".format(
+			max_path_length,
+			time.time() - start,
+		))
 except Exception as e:
 	print("error: {}".format(e))
 	traceback.print_exc()
 	mdistances = None
 def mdist(ml1, ml2):
-	try:
-		if not mdistances:
-			return ml1.distance_squared_to(ml2)
-		if not on_pmap(ml1) or not on_pmap(ml2):
-			return max_path_length ** 2 + ml1.distance_squared_to(ml2)
-		dist = mdistances[ml_pair_hash(ml1, ml2)]
-		if dist == 2501:
-			return max_path_length ** 2 + ml1.distance_squared_to(ml2)
-		return dist ** 2
-	except Exception as e:
-		print("{} {}".format(ml1, ml2))
-		print("error: {}".format(e))
-		traceback.print_exc()
+	if not mdistances:
+		return ml1.distance_squared_to(ml2)
+	if not on_pmap(ml1) or not on_pmap(ml2):
+		return max_path_length ** 2 + ml1.distance_squared_to(ml2)
+	dist = mdistances[ml_pair_hash(ml1.x, ml1.y, ml2.x, ml2.y)]
+	if dist == 2501:
+		return max_path_length ** 2 + ml1.distance_squared_to(ml2)
+	return dist ** 2
 
 if planet == bc.Planet.Earth:
 	estructures.update({
@@ -699,6 +804,9 @@ while True:
 		built_rocket = False
 		processed = set()
 
+		at_unit_cap = sum(len(dunits[ateam][ut]) for ut in [k,m,r]) > \
+			aggressive_attacker_count
+
 		btime(0)
 
 		for utt in [t, w, f, m, k, r, h]:
@@ -809,8 +917,7 @@ while True:
 
 					if gc.can_produce_robot(unit.id, buildQueue[0]) \
 						and not gtm \
-						and sum(len(dunits[ateam][ut]) for ut in [k,m,r]) < \
-							aggressive_attacker_count \
+						and not at_unit_cap \
 						and len(unit.structure_garrison()) < 7 \
 					:
 						gc.produce_robot(unit.id, buildQueue[0])
@@ -831,6 +938,9 @@ while True:
 							}
 							next_unit = min([r,h,m,k], key=lambda ut: frac[ut])
 							buildQueue.append(next_unit)
+
+							if len(dunits[ateam][w]) == 0:
+								buildQueue.appendleft(w)
 
 				btime(10)
 				atime(12)
@@ -1030,7 +1140,10 @@ while True:
 							#rprint('built a rocket')
 							built_rocket = True
 							break
-						elif gc.can_blueprint(unit.id, f, d):
+						elif gc.can_blueprint(unit.id, f, d) and ( \
+							len(dunits[ateam][f]) < min_num_factories or \
+							not at_unit_cap and karbonite > 200 \
+						):
 							gc.blueprint(unit.id, f, d)
 							karbonite -= f.blueprint_cost()
 							w_is_busy = True
@@ -1123,11 +1236,20 @@ while True:
 				)
 				btime(21)
 
+				# don't move if low on time
+				# because movement is expensive
+				dont_move_out_of_time = False
+				if ran_out_of_time and gc.get_time_left_ms() < 1200 and \
+					ut in [w,h,k,m,r] \
+				:
+					dont_move_out_of_time
+
 				# try to move
 				# greedy minimize marginal danger
 				# given movements of prior robots
 				if gc.is_move_ready(unit.id) \
 					and not (ut == w and w_is_busy) \
+					and not dont_move_out_of_time \
 				:
 					direction = pickMoveDirection(
 						directions if force_move else list(bc.Direction), 
@@ -1138,7 +1260,7 @@ while True:
 
 						# micro
 						# be able to attack someone if aggressive
-						None if not (ut in [k,m,r] and aggressive) else
+						None if not (ut in [m,r] and aggressive) else
 							lambda d: exists_nearby(
 								reattackers,
 								add(unit, d),
@@ -1146,21 +1268,21 @@ while True:
 								lambda e: can_attack(unit, add(e, d.opposite()))
 							),
 						# be able to heal someone
-						#None if ut != h else lambda d: -exists_nearby(
+						#None if ut != h else lambda d: exists_nearby(
 						#	rhunits,
 						#	add(unit, d),
 						#	unit.attack_range(),
 						#	lambda u: True
 						#),
-						None if ut != h else lambda d: -dist_to_nearest(
+						None if ut != h else lambda d: min(-dist_to_nearest(
 							rhunits,
 							add(unit, d),
-							lambda u: True,
+							lambda u: u.unit_type in [m,r,k],
 							unit.attack_range(),
 							mdist
-						),
+						), -unit.attack_range()),
 						# avoid getting attacked
-						None if ut in [k] else lambda d: -marginal_danger(
+						None if ut not in [m,r] else lambda d: -marginal_danger(
 							unit,
 							add(unit, d),
 							# ignore enemies with the same range
@@ -1194,7 +1316,7 @@ while True:
 									)
 							),
 						# retreat from lower range enemies
-						None if ut in [m,r] else lambda d:
+						None if ut not in [m,r] else lambda d:
 							dist_to_nearest(
 								dunits[eteam][k] if ut == m else
 								dunits[eteam][k] + dunits[eteam][m],
@@ -1228,6 +1350,13 @@ while True:
 							0,
 							mdist
 						),
+						#none if ut != h else lambda d: min(-dist_to_nearest(
+						#	rhunits,
+						#	add(unit, d),
+						#	lambda u: True,
+						#	unit.attack_range(),
+						#	mdist
+						#), -unit.attack_range()),
 						None if ut not in [k,r,m] or planet != bc.Planet.Earth else
 							lambda d: -dist_to_nearest(
 								dunits[ateam][t],
@@ -1239,13 +1368,14 @@ while True:
 								estructuresv_eunits,
 								add(unit, d),
 								lambda e: True,
-								unit.attack_range()
+								unit.attack_range(),
+								mdist
 							), -unit.attack_range()),
-						None if ut != w else
-							lambda d: -min([
-								mdist(uml, location[unit.id].map_location())
-								for ml in deposits
-							] + [float('5000')]),
+						#None if ut != w else
+						#	lambda d: -min([
+						#		mdist(uml, location[unit.id].map_location())
+						#		for ml in deposits
+						#	] + [float('5000')]),
 
 						# knight avoiding damage is low priority
 						#None if ut not in [k] else lambda d: -marginal_danger(
@@ -1350,7 +1480,7 @@ while True:
 		btime(30)
 		atime(40)
 
-		if round_num % 10 == 0:
+		if round_num % 5 == 0:
 			gcollector.collect()
 
 		end = time.time()
