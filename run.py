@@ -38,13 +38,13 @@ gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
 gc.queue_research(bc.UnitType.Healer)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-#gc.queue_research(bc.UnitType.Mage)
-gc.queue_research(bc.UnitType.Knight)
-gc.queue_research(bc.UnitType.Knight)
-gc.queue_research(bc.UnitType.Knight)
+gc.queue_research(bc.UnitType.Mage)
+gc.queue_research(bc.UnitType.Mage)
+gc.queue_research(bc.UnitType.Mage)
+gc.queue_research(bc.UnitType.Mage)
+#gc.queue_research(bc.UnitType.Knight)
+#gc.queue_research(bc.UnitType.Knight)
+#gc.queue_research(bc.UnitType.Knight)
 gc.queue_research(bc.UnitType.Rocket)
 gc.queue_research(bc.UnitType.Ranger)
 gc.queue_research(bc.UnitType.Worker)
@@ -73,7 +73,7 @@ def normalize_ratio(ratios):
 	}
 
 def desired_unit_ratio(round_num):
-	if round_num < 300:
+	if round_num < 215:
 		return normalize_ratio({
 			r: 2,
 			k: 0,
@@ -82,9 +82,9 @@ def desired_unit_ratio(round_num):
 		})
 	else:
 		return normalize_ratio({
-			r: 2,
-			k: 1,
-			m: 0,
+			r: 1,
+			k: 0,
+			m: 2,
 			h: 1,
 		})
 
@@ -98,14 +98,15 @@ def uhml(tup):
 def filter(data, f):
 	return [d for d in data if f]
 
-aggressive_attacker_count = 40
+aggressive_attacker_count = 30
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
 min_num_factories = 5
 max_path_length = 2500
 min_path_length = 20
-max_path_time = 1.0
-force_move = False
+max_path_time = 2.0
+force_move = True
+downsample = 1
 
 buildQueue = collections.deque(initialBuildQueue)
 
@@ -115,7 +116,7 @@ min_num_workers = 7 + len(filter(gc.units(), lambda u:
 min_worker_ratio = .1
 
 def pickMoveDirection(directions, criteria):
-	atime('pickMoveDirection')
+	#atime('pickMoveDirection')
 
 	if len(directions) == 0:
 		return None
@@ -137,7 +138,7 @@ def pickMoveDirection(directions, criteria):
 		if score >= float(int(best_score)) - 1e-6
 	]
 
-	btime('pickMoveDirection')
+	#btime('pickMoveDirection')
 
 	return pickMoveDirection(best_directions, criteria[1:])
 
@@ -426,6 +427,7 @@ while True:
 			and unit.location.is_on_map()
 			and unit.attack_heat() < 100
 		]
+		eattackers_s = eattackers[::downsample]
 
 		health = {unit.id: unit.health for unit in units}
 		location = {unit.id: unit.location for unit in units}
@@ -497,6 +499,7 @@ while True:
 		})
 		estructuresv = list(estructures.values())
 		estructuresv_eunits = estructuresv + eunits
+		estructuresv_eunits_s = estructuresv_eunits[::downsample]
 
 		# overcharge priority
 		def needs_overcharge(ally):
@@ -505,10 +508,11 @@ while True:
 				ally.movement_heat() >= 10
 		opriority = [
 			lambda u: u.unit_type in [m,k] and u.ability_heat() >= 10,
-			lambda u: u.unit_type in [m,k,r] and u.attack_heat() >= 10,
-			lambda u: u.unit_type in [h] and u.attack_heat() >= 10,
-			lambda u: u.unit_type in [m,k] and u.movement_heat() >= 10,
-			lambda u: u.unit_type in [h,w,r] and u.movement_heat() >= 10,
+			lambda u: u.unit_type in [m,k] and u.attack_heat() >= 10,
+			#lambda u: u.unit_type in [r] and u.attack_heat() >= 10,
+			#lambda u: u.unit_type in [h] and u.attack_heat() >= 10,
+			#lambda u: u.unit_type in [m,k] and u.movement_heat() >= 10,
+			#lambda u: u.unit_type in [h,w,r] and u.movement_heat() >= 10,
 		]
 		can_overcharge = gc.research_info().get_level(h) >= 3
 		can_blink = gc.research_info().get_level(m) >= 4
@@ -561,7 +565,7 @@ while True:
 		sunk_danger = {unit.id: 0 for unit in eattackers}
 
 		def marginal_danger_from(unit, ml, enemy):
-			atime('marginal_danger_from')
+			#atime('marginal_danger_from')
 			#return max(0,
 			#	value(unit) *
 			#	max(unit.health, enemy.damage()) * (
@@ -577,17 +581,17 @@ while True:
 				(1 if can_attack(enemy, ml) else 0) -
 				sunk_danger[enemy.id]
 			)
-			btime('marginal_danger_from')
+			#btime('marginal_danger_from')
 			return result
 
 		def marginal_danger(unit, ml, f, enemies=eattackers):
-			atime('marginal_danger')
+			#atime('marginal_danger')
 			result = sum(
 				marginal_danger_from(unit, ml, enemy)
 				for enemy in enemies
 				#if f(enemy) and can_attack(enemy, ml)
 			)
-			btime('marginal_danger')
+			#btime('marginal_danger')
 			return result
 
 		def update_sunk_danger(unit, ml, enemies=eattackers, sunk_danger_cache=None):
@@ -597,19 +601,19 @@ while True:
 			btime('update_sunk_danger')
 
 		def exists_nearby(units, ml, r, f):
-			atime('exists_nearby')
+			#atime('exists_nearby')
 			for unit in units:
 				if location[unit.id].is_on_map() and \
 					f(unit) and \
 					location[unit.id].map_location().is_within_range(r, ml) \
 				:
-					btime('exists_nearby')
+					#btime('exists_nearby')
 					return True
-			btime('exists_nearby')
+			#btime('exists_nearby')
 			return False
 
 		def nearby(units, ml, r, f):
-			atime('nearby')
+			#atime('nearby')
 			result = [
 				unit
 				for unit in units
@@ -617,13 +621,13 @@ while True:
 				and location[unit.id].is_on_map()
 				and location[unit.id].map_location().is_within_range(r, ml)
 			]
-			btime('nearby')
+			#btime('nearby')
 			return result
 
 		def dist_to_nearest(units, ml, f, stop_min_dist=0, distance= \
 			lambda ml1, ml2: ml1.distance_squared_to(ml2)
 		):
-			atime('dist_to_nearest')
+			#atime('dist_to_nearest')
 
 			min_dist = None
 			for unit in units:
@@ -632,19 +636,19 @@ while True:
 					if not min_dist or dist < min_dist:
 						min_dist = dist
 						if dist < stop_min_dist:
-							btime('dist_to_nearest')
+							#btime('dist_to_nearest')
 							return stop_min_dist
 
 			if not min_dist:
-				btime('dist_to_nearest')
+				#btime('dist_to_nearest')
 				return max_path_length ** 2 + 2501
 
-			btime('dist_to_nearest')
+			#btime('dist_to_nearest')
 
 			return min_dist
 
 		def adjacent(ml, r, f):
-			atime('adjacent')
+			#atime('adjacent')
 			x, y = ml.x, ml.y
 			loc = [
 				(x + 1, y),
@@ -664,7 +668,7 @@ while True:
 				if um in munits
 				and f(munits[um])
 			]
-			btime('adjacent')
+			#btime('adjacent')
 			return result
 
 		def dot(d1, d2):
@@ -756,12 +760,22 @@ while True:
 		), key=lambda e: enemy_attack_priority[e.unit_type])
 
 		# mages prioritize enemies adjacent to other enemies
-		meunits = sorted(
-			[e for e in eunits if location[e.id].is_on_map()],
-			key=lambda e: -1 + sum(
+		def mev(e):
+			return -1 + sum(
 				1 if u.team == ateam else -1
-				for u in adjacent(location[e.id].map_location(), 2, lambda u: True)
+				for u in adjacent(
+					location[e.id].map_location(),
+					2,
+					lambda u: True
+				)
 			)
+		meunits = sorted(
+			[
+				e for e in eunits
+				if location[e.id].is_on_map()
+				and mev(e) < 0
+			],
+			key=mev
 		)
 
 		# sort allies in order of who we want to heal
@@ -774,6 +788,7 @@ while True:
 			],
 			key=lambda a: -value(a)
 		)
+		hunits_s = hunits[::downsample]
 
 		bunits = [
 			u
@@ -837,6 +852,7 @@ while True:
 					return
 
 				uml = location[unit.id].map_location()
+				uid = unit.id
 
 				ut = unit.unit_type
 
@@ -908,7 +924,9 @@ while True:
 						for a in adjacent(uml, 2, lambda u: u.team == ateam):
 							if gc.can_load(unit.id, a.id):
 								gc.load(unit.id, a.id)
+								na = gc.unit(a.id)
 								d = uml.direction_to(a.location.map_location())
+								ulocation(na, na.location)
 								if gc.can_unload(unit.id, d):
 									gc.unload(unit.id, d)
 									uu = gc.sense_unit_at_location(add(unit, d))
@@ -972,6 +990,7 @@ while True:
 									if gc.can_sense_unit(u.id) else 0
 							return enemy
 					return None
+
 				if ut == m:
 					mcan_attack = gc.is_attack_ready(unit.id)
 					if mcan_attack:
@@ -987,32 +1006,127 @@ while True:
 
 						mattack(rmeunits)
 
+						def dist_n_steps(a, b, n):
+							dx = max(0, abs(b.x - a.x) - 2)
+							dy = max(0, abs(b.y - a.y) - 2)
+							return dx * dx + dy * dy
+
 						if unit.ability_heat() < 10 and can_blink:
-							bml = gc.all_locations_within(uml, unit.ability_range())
 
 							if gc.is_attack_ready(unit.id):
 								# no enemies in range -> blink forwards and attack
-								for enemy in rmeunits:
-									for ml in bml:
-										if ml.is_within_range( \
-											unit.attack_range(), \
-											location[enemy.id].map_location() \
-										):
-											gc.blink(unit.id, ml)
-											ulocation(unit, loc)
-											uml = ml
-											if not mattack([enemy]):
-												rprint('blink-attack failed')
+								# pick closest enemy
+								enemy = next((
+									e for e in dunits[eteam][r]
+									if health[e.id] > 0
+									and location[e.id].is_on_map()
+									and dist_n_steps(
+										location[e.id].map_location(),
+										uml,
+										2
+									) <= unit.attack_range()
+								), None)
+
+								if enemy:
+									eml = location[enemy.id].map_location()
+
+									# get intermediate movement / location
+									idir = uml.direction_to(eml)
+									iml = uml.add(idir)
+
+									# get final movement / location
+									fdir = iml.direction_to(eml)
+									fml = iml.add(fdir)
+
+									if gc.can_blink(unit.id, fml):
+										gc.blink(unit.id, fml)
+										ulocation(
+											unit,
+											bc.Location.new_on_map(fml)
+										)
+										uml = fml
+										if mattack([enemy]):
+											#rprint('blink-attack succeeded')
+											pass
+										else:
+											#rprint('blink-attack failed')
+											pass
 							else:
 								# enemies in range -> blink back
-								ml = max(bml, key=lambda ml: dist_to_nearest(
-									eattackers,
-									ml,
-									lambda u: True
-								))
-								gc.blink(unit.id, ml)
-								ulocation(unit, ml)
-								uml = ml
+								#bml = gc.all_locations_within(
+								#	uml,
+								#	unit.ability_range()
+								#)
+								#ml = max(bml, key=lambda ml: dist_to_nearest(
+								#	eattackers,
+								#	ml,
+								#	lambda u: True
+								#))
+								#gc.blink(unit.id, ml)
+								#ulocation(unit, ml)
+								#uml = ml
+								pass
+
+						# try to move-overcharge-move attack
+						if can_overcharge \
+							and not can_blink \
+							and unit.movement_heat() < 10 \
+						:
+							# pick closest enemy
+							enemy = next((
+								e for e in dunits[eteam][r]
+								if health[e.id] > 0
+								and location[e.id].is_on_map()
+								and dist_n_steps(
+									location[e.id].map_location(),
+									uml,
+									2
+								) <= unit.attack_range()
+							), None)
+
+							if enemy:
+								eml = location[enemy.id].map_location()
+
+								# get intermediate movement / location
+								idir = uml.direction_to(eml)
+								iml = uml.add(idir)
+
+								# get final movement / location
+								fdir = iml.direction_to(eml)
+								fml = iml.add(fdir)
+
+								if (iml.x, iml.y) not in munits \
+									and (fml.x, fml.y) not in munits \
+									and pmap.is_passable_terrain_at(iml) \
+									and pmap.is_passable_terrain_at(fml) \
+								:
+									healer = next((
+										a for a in dunits[ateam][h]
+										if location[a.id].is_on_map()
+										and location[a.id].
+											map_location().
+											is_within_range(
+												a.attack_range(),
+												iml
+											)
+										and health[a.id] > 0
+										and gc.is_overcharge_ready(a.id)
+									), None)
+
+									if healer:
+										gc.move_robot(uid, idir)
+										gc.overcharge(healer.id, uid)
+										gc.move_robot(uid, fdir)
+
+										ulocation(unit, gc.unit(uid).location)
+										uml = location[uid]
+
+										if mattack([enemy]):
+											#rprint('moma succeeded')
+											pass
+										else:
+											#rprint('moma failed')
+											pass
 
 				# knight javelin
 				if ut == k and gc.is_javelin_ready(unit.id) and can_javelin:
@@ -1210,7 +1324,7 @@ while True:
 					len(dunits[ateam][k]) < aggressive_attacker_count \
 					else aggressive_threshold
 				aggressive = health[unit.id] >= unit.max_health * dmg_thresh
-				if ut in [k,m]:
+				if ut in [k,m,r]:
 					aggressive = True
 
 				btime(18)
@@ -1218,7 +1332,7 @@ while True:
 
 				atime(21)
 				reattackers = filter(
-					eattackers,
+					eattackers_s,
 					lambda e: location[e.id].is_within_range(
 						int((e.attack_range()**.5 + 2) ** 2),
 						location[unit.id]
@@ -1228,7 +1342,7 @@ while True:
 					)
 				)
 				rhunits = filter(
-					hunits,
+					hunits_s,
 					lambda a: location[a.id].is_within_range(
 						int((unit.attack_range()**.5 + 2) ** 2),
 						location[unit.id]
@@ -1247,13 +1361,36 @@ while True:
 				# don't move if attacking
 				dont_move_attacked = False
 				if ut in [r,h] and gc.unit(unit.id).attack_heat() >= 10:
-					dont_move_attacked = True
+					#dont_move_attacked = True
+					pass
+
+				# don't move if building / harvesting
+				# unless next to fully built factory
+				dont_move_wacted = False
+				if ut == w and w_is_busy:
+					adj = adjacent(
+							uml,
+							2,
+							lambda u: True
+					)
+					building = False
+					clumped = False
+					for u in adj:
+						if u.unit_type in [f,t] \
+							and health[u.id] < u.max_health \
+							and u.team == ateam \
+						:
+							building = True
+						if u.team == eteam or u.unit_type in [w,f]:
+							clumped = True
+					if building or not clumped:
+						dont_move_wacted = True
 
 				# try to move
 				# greedy minimize marginal danger
 				# given movements of prior robots
 				if gc.is_move_ready(unit.id) \
-					and not (ut == w and w_is_busy) \
+					and not dont_move_wacted \
 					and not dont_move_out_of_time \
 					and not dont_move_attacked \
 				:
@@ -1266,7 +1403,7 @@ while True:
 
 						# micro
 						# be able to attack someone if aggressive
-						None if not (ut in [m,r] and aggressive) else
+						None if not (ut in [r] and aggressive) else
 							lambda d: exists_nearby(
 								reattackers,
 								add(unit, d),
@@ -1288,7 +1425,7 @@ while True:
 							mdist
 						), -unit.attack_range()),
 						# avoid getting attacked
-						None if ut not in [m,r] else lambda d: -marginal_danger(
+						None if ut not in [r] else lambda d: -marginal_danger(
 							unit,
 							add(unit, d),
 							# ignore enemies with the same range
@@ -1307,6 +1444,13 @@ while True:
 						#		unit.vision_range,
 						#		lambda e: True
 						#	),
+						# mage avoid rangers
+						None if ut not in [m] else lambda d: not exists_nearby(
+							dunits[eteam][r],
+							add(unit, d),
+							50,
+							lambda e: True
+						),
 						# retreat
 						None if ut not in [w,h] else lambda d:
 							dist_to_nearest(
@@ -1317,27 +1461,27 @@ while True:
 									location.
 									map_location().
 									is_within_range(
-										int((e.vision_range**.5 + 0) ** 2),
+										int((e.attack_range()**.5 + 2) ** 2),
 										add(unit, d)
 									)
 							),
 						# retreat from lower range enemies
-						None if ut not in [m,r] else lambda d:
-							dist_to_nearest(
-								dunits[eteam][k] if ut == m else
-								dunits[eteam][k] + dunits[eteam][m],
-								add(unit, d),
-								lambda e:
-									e.
-									location.
-									map_location().
-									is_within_range(
-										e.vision_range,
-										add(unit, d)
-									) and
-									e.attack_range() < unit.attack_range() and
-									e.unit_type in [k,m]
-							),
+						#None if ut not in [m,r] else lambda d:
+						#	dist_to_nearest(
+						#		dunits[eteam][k] if ut == m else
+						#		dunits[eteam][k] + dunits[eteam][m],
+						#		add(unit, d),
+						#		lambda e:
+						#			e.
+						#			location.
+						#			map_location().
+						#			is_within_range(
+						#				e.vision_range,
+						#				add(unit, d)
+						#			) and
+						#			e.attack_range() < unit.attack_range() and
+						#			e.unit_type in [k,m]
+						#	),
 						#None if ut not in [k,r,m] else
 						#	lambda d: dist_to_nearest(
 						#		eattackers,
@@ -1369,13 +1513,14 @@ while True:
 							lambda d: -dist_to_nearest(
 								dunits[ateam][t],
 								add(unit, d),
-								lambda a: location[a.id].is_on_map(),
+								lambda a: location[a.id].is_on_map() and
+									len(a.structure_garrison()) < 4,
 								1,
 								mdist
 							),
 						None if ut not in [k,r,m] else
 							lambda d: min(-dist_to_nearest(
-								estructuresv_eunits,
+								estructuresv_eunits_s,
 								add(unit, d),
 								lambda e: True,
 								unit.attack_range(),
@@ -1401,11 +1546,12 @@ while True:
 						#),
 
 						# spread
-						None if ut not in [] else lambda d: -len(adjacent(
-							add(unit, d),
-							2,
-							lambda u: u.id != unit.id and u.team == ateam
-						)),
+						None if ut not in [r] or round_num > 100 else
+							lambda d: -len(adjacent(
+								add(unit, d),
+								2,
+								lambda u: u.id != unit.id and u.team == ateam
+							)),
 
 						# exploration
 						lambda d: dot(rd, d)
@@ -1514,7 +1660,11 @@ while True:
 		rprint("error: {}".format(e))
 		traceback.print_exc()
 
+	#end_time_remaining = gc.get_time_left_ms()
 	gc.next_turn()
+	#rprint("gc.next_turn() took {}".format(
+	#	end_time_remaining - gc.get_time_left_ms() + 50
+	#))
 
 	sys.stdout.flush()
 	sys.stderr.flush()
