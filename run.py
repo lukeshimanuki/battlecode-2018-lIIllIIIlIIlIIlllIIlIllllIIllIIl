@@ -116,7 +116,7 @@ min_num_workers = 7 + len(filter(gc.units(), lambda u:
 min_worker_ratio = .1
 
 def pickMoveDirection(directions, criteria):
-	#atime('pickMoveDirection')
+	atime('pickMoveDirection')
 
 	if len(directions) == 0:
 		return None
@@ -138,7 +138,7 @@ def pickMoveDirection(directions, criteria):
 		if score >= float(int(best_score)) - 1e-6
 	]
 
-	#btime('pickMoveDirection')
+	btime('pickMoveDirection')
 
 	return pickMoveDirection(best_directions, criteria[1:])
 
@@ -585,13 +585,13 @@ while True:
 			return result
 
 		def marginal_danger(unit, ml, f, enemies=eattackers):
-			#atime('marginal_danger')
+			atime('marginal_danger')
 			result = sum(
 				marginal_danger_from(unit, ml, enemy)
 				for enemy in enemies
 				#if f(enemy) and can_attack(enemy, ml)
 			)
-			#btime('marginal_danger')
+			btime('marginal_danger')
 			return result
 
 		def update_sunk_danger(unit, ml, enemies=eattackers, sunk_danger_cache=None):
@@ -601,19 +601,19 @@ while True:
 			btime('update_sunk_danger')
 
 		def exists_nearby(units, ml, r, f):
-			#atime('exists_nearby')
+			atime('exists_nearby')
 			for unit in units:
 				if location[unit.id].is_on_map() and \
 					f(unit) and \
 					location[unit.id].map_location().is_within_range(r, ml) \
 				:
-					#btime('exists_nearby')
+					btime('exists_nearby')
 					return True
-			#btime('exists_nearby')
+			btime('exists_nearby')
 			return False
 
 		def nearby(units, ml, r, f):
-			#atime('nearby')
+			atime('nearby')
 			result = [
 				unit
 				for unit in units
@@ -621,13 +621,13 @@ while True:
 				and location[unit.id].is_on_map()
 				and location[unit.id].map_location().is_within_range(r, ml)
 			]
-			#btime('nearby')
+			btime('nearby')
 			return result
 
 		def dist_to_nearest(units, ml, f, stop_min_dist=0, distance= \
 			lambda ml1, ml2: ml1.distance_squared_to(ml2)
 		):
-			#atime('dist_to_nearest')
+			atime('dist_to_nearest')
 
 			min_dist = None
 			for unit in units:
@@ -636,19 +636,19 @@ while True:
 					if not min_dist or dist < min_dist:
 						min_dist = dist
 						if dist < stop_min_dist:
-							#btime('dist_to_nearest')
+							btime('dist_to_nearest')
 							return stop_min_dist
 
 			if not min_dist:
-				#btime('dist_to_nearest')
+				btime('dist_to_nearest')
 				return max_path_length ** 2 + 2501
 
-			#btime('dist_to_nearest')
+			btime('dist_to_nearest')
 
 			return min_dist
 
 		def adjacent(ml, r, f):
-			#atime('adjacent')
+			atime('adjacent')
 			x, y = ml.x, ml.y
 			loc = [
 				(x + 1, y),
@@ -668,7 +668,7 @@ while True:
 				if um in munits
 				and f(munits[um])
 			]
-			#btime('adjacent')
+			btime('adjacent')
 			return result
 
 		def dot(d1, d2):
