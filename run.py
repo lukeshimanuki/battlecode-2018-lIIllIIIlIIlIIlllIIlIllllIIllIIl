@@ -8,6 +8,7 @@ import collections
 import enum
 import array
 import gc as gcollector
+from kdtree import kdtree
 
 #gcollector.disable()
 
@@ -195,8 +196,10 @@ def ml_hash(ml):
 def gen_x(n, x):
     for i in range(n):
         yield x
+def on_pmap_c(x, y):
+	return x >= 0 and y >= 0 and x < pmap_width and y < pmap_height
 def on_pmap(ml):
-	return ml.x >= 0 and ml.y >= 0 and ml.x < pmap_width and ml.y < pmap_height
+	return on_pmap_c(ml.x, ml.y)
 try:
 	# all pairs distances
 	start = time.time()
@@ -341,15 +344,19 @@ except Exception as e:
 	print("error: {}".format(e))
 	traceback.print_exc()
 	mdistances = None
-def mdist(ml1, ml2):
+def squared_dist_c(x1, y1, x2, y2):
+	return (x2 - x1) ** 2 + (y2 - y1) ** 2
+def mdist_c(x1, y1, x2, y2):
 	if not mdistances:
-		return ml1.distance_squared_to(ml2)
-	if not on_pmap(ml1) or not on_pmap(ml2):
-		return max_path_length ** 2 + ml1.distance_squared_to(ml2)
-	dist = mdistances[ml_pair_hash(ml1.x, ml1.y, ml2.x, ml2.y)]
+		return squared_dist_c(x1, y1, x2, y2)
+	if not on_pmap_c(x1, y1) or not on_pmap_c(x2, y2):
+		return max_path_length ** 2 + squared_dist_c(x1, y1, x2, y2)
+	dist = mdistances[ml_pair_hash(x1, y1, x2, y2)]
 	if dist == 2501:
-		return max_path_length ** 2 + ml1.distance_squared_to(ml2)
+		return max_path_length ** 2 + squared_dist_c(x1, y1, x2, y2)
 	return dist ** 2
+def mdist(ml1, ml2):
+	return mdist_c(ml1.x, ml1.y, ml2.x, ml2.y)
 
 if planet == bc.Planet.Earth:
 	estructures.update({
@@ -357,6 +364,30 @@ if planet == bc.Planet.Earth:
 		for unit in pmap.initial_units
 		if unit.location.is_on_map()
 	})
+
+kstart = time.time()
+karbonite_at = array.array('I', gen_x(64*64, 0))
+karbonite_locations = kdtree.create(dimensions=2)
+if planet == bc.Planet.Earth:
+	for x in range(pmap_width):
+		for y in range(pmap_height):
+			amount = pmap.initial_karbonite_at(bc.MapLocation(planet, x, y))
+			if amount > 0:
+				karbonite_at[ml_hash_c(x, y)] = amount
+				karbonite_locations.add((x, y))
+if karbonite_locations:
+	karbonite_locations = karbonite_locations.rebalance()
+kend = time.time()
+print("karbonite kdtree took {0:.3f}".format(kend - kstart))
+
+def dist_to_nearest_kdtree(x, y, tree, dist):
+	atime('dist_to_nearest_kdtree')
+	if not tree:
+		return 0
+	kx, ky = tree.search_nn((x, y))[0].data
+	result = mdist_c(x, y, kx, ky)
+	btime('dist_to_nearest_kdtree')
+	return result
 
 # get mars locations
 mmap = gc.starting_map(bc.Planet.Mars)
@@ -374,19 +405,20 @@ mars_locations = mars_locations * 50
 if ateam == bc.Team.Red:
 	mars_locations = mars_locations[::-1]
 
-asteroids = dict()
-if planet == bc.Planet.Mars:
-	ap = gc.asteroid_pattern()
-	for round_num in range(1000):
-		if ap.has_asteroid(round_num):
-			ast = ap.asteroid(round_num)
-			asteroids[round_num] = ast
+asteroid_pattern = gc.asteroid_pattern()
+#asteroids = dict()
+#if planet == bc.Planet.Mars:
+#	ap = gc.asteroid_pattern()
+#	for round_num in range(1000):
+#		if ap.has_asteroid(round_num):
+#			ast = ap.asteroid(round_num)
+#			asteroids[round_num] = ast
 
-kearth = set()
-for ml in gc.all_locations_within(bc.MapLocation(planet, 0, 0), 5000):
-	if pmap.initial_karbonite_at(ml) > 0:
-		if all(uhml(kml).distance_squared_to(ml) > 25 for kml in kearth):
-			kearth.add(hml(ml))
+#kearth = set()
+#for ml in gc.all_locations_within(bc.MapLocation(planet, 0, 0), 5000):
+#	if pmap.initial_karbonite_at(ml) > 0:
+#		if all(uhml(kml).distance_squared_to(ml) > 25 for kml in kearth):
+#			kearth.add(hml(ml))
 
 runtimes = []
 
@@ -473,6 +505,21 @@ while True:
 		#	for e in dunits[eteam][f] + dunits[eteam][t]
 		#	if e.location.is_on_map()
 		#]
+
+		if planet == bc.Planet.Mars:
+			if asteroid_pattern.has_asteroid(round_num):
+				asteroid = asteroid_pattern.asteroid(round_num)
+				kml = asteroid.location
+				kx = kml.x
+				ky = kml.y
+				kc = ml_hash_c(kx, ky)
+				added_amount = asteroid.karbonite
+				prev_amount = karbonite_at[kc]
+				karbonite_at[kc] = prev_amount + added_amount
+				if prev_amount == 0:
+					karbonite_locations.add((kx, ky))
+					if not karbonite_locations.is_balanced:
+						karbonite_locations = karbonite_locations.rebalance()
 
 		# remove nonexisting estructures
 		to_remove = []
@@ -796,24 +843,24 @@ while True:
 			if u.health < u.max_health
 		]
 
-		deposits = [
-			ast.location
-			for rn, ast in asteroids.items()
-			if rn <= round_num
-			and gc.can_sense_location(ast.location)
-			and gc.karbonite_at(ast.location) > 0
-		] if planet == bc.Planet.Mars else [
-			uhml(ml)
-			for ml in kearth
-			if gc.can_sense_location(uhml(ml))
-		]
-		to_remove = {
-			ml
-			for ml in kearth
-			if gc.can_sense_location(uhml(ml))
-			and gc.karbonite_at(uhml(ml)) == 0
-		}
-		kearth -= to_remove
+		#deposits = [
+		#	ast.location
+		#	for rn, ast in asteroids.items()
+		#	if rn <= round_num
+		#	and gc.can_sense_location(ast.location)
+		#	and gc.karbonite_at(ast.location) > 0
+		#] if planet == bc.Planet.Mars else [
+		#	uhml(ml)
+		#	for ml in kearth
+		#	if gc.can_sense_location(uhml(ml))
+		#]
+		#to_remove = {
+		#	ml
+		#	for ml in kearth
+		#	if gc.can_sense_location(uhml(ml))
+		#	and gc.karbonite_at(uhml(ml)) == 0
+		#}
+		#kearth -= to_remove
 
 		overcharged = []
 		built_rocket = False
@@ -834,6 +881,7 @@ while True:
 				global overcharged
 				global built_rocket
 				global processed
+				global karbonite_locations
 
 				atime(10)
 
@@ -852,6 +900,8 @@ while True:
 					return
 
 				uml = location[unit.id].map_location()
+				uml_x = uml.x
+				uml_y = uml.y
 				uid = unit.id
 
 				ut = unit.unit_type
@@ -1268,13 +1318,37 @@ while True:
 				if ut == w and not w_is_busy:
 					d = max(
 						list(bc.Direction),
-						key=lambda d: -1 if not pmap.on_map(add(unit, d)) or
-							not gc.can_sense_location(add(unit, d))
-							else gc.karbonite_at(add(unit, d))
+						key=lambda d: -1 if not on_pmap_c(
+							uml.x + d.dy(),
+							uml.y + d.dy()
+						) else karbonite_at[ml_hash_c(
+							uml.x + d.dx(),
+							uml.y + d.dy(),
+						)]
 					)
-					if gc.karbonite_at(add(unit, d)) > 0:
-						gc.harvest(unit.id, d)
-						w_is_busy = True
+					kx = uml.x + d.dx()
+					ky = uml.y + d.dy()
+					kc = ml_hash_c(kx, ky)
+					if karbonite_at[kc] > 0:
+						actual_k = gc.karbonite_at(bc.MapLocation(
+							planet,
+							kx,
+							ky)
+						)
+						if actual_k > 0:
+							gc.harvest(unit.id, d)
+							actual_k = max(
+								0,
+								actual_k - unit.worker_harvest_amount(),
+							)
+							w_is_busy = True
+						karbonite_at[kc] = actual_k
+						if actual_k == 0:
+							karbonite_locations = karbonite_locations.remove(
+								(kx, ky)
+							)
+							if not karbonite_locations.is_balanced:
+								karbonite_locations = karbonite_locations.rebalance()
 
 				btime(16)
 				atime(18)
@@ -1531,6 +1605,12 @@ while True:
 						#		mdist(uml, location[unit.id].map_location())
 						#		for ml in deposits
 						#	] + [float('5000')]),
+						None if ut != w else lambda d: -dist_to_nearest_kdtree(
+							uml_x + d.dx(),
+							uml_y + d.dy(),
+							karbonite_locations,
+							mdist_c,
+						),
 
 						# knight avoiding damage is low priority
 						#None if ut not in [k] else lambda d: -marginal_danger(
@@ -1545,7 +1625,7 @@ while True:
 						#	reattackers
 						#),
 
-						# spread
+						## spread
 						None if ut not in [r] or round_num > 100 else
 							lambda d: -len(adjacent(
 								add(unit, d),
@@ -1553,8 +1633,8 @@ while True:
 								lambda u: u.id != unit.id and u.team == ateam
 							)),
 
-						# exploration
-						lambda d: dot(rd, d)
+						## exploration
+						#lambda d: dot(rd, d)
 					])
 
 					if direction and gc.can_move(unit.id, direction) and \
@@ -1644,6 +1724,7 @@ while True:
 		if len(runtimes) % 100 == 0:
 			rprint("runtime: {0:.3f}".format(max(runtimes)))
 			rprint("time remaining: {}".format(gc.get_time_left_ms()))
+			#kdtree.visualize(karbonite_locations)
 			#runtimes = []
 
 			for i,rt in runtime.items():
