@@ -125,7 +125,7 @@ def uhml(tup):
 def filter(data, f):
 	return [d for d in data if f]
 
-aggressive_attacker_count = 50
+aggressive_attacker_count = 30
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
 min_num_factories = 5
@@ -136,11 +136,6 @@ force_move = True
 downsample = 1
 
 buildQueue = collections.deque(initialBuildQueue)
-
-min_num_workers = 7 + len(filter(gc.units(), lambda u:
-	u.unit_type == w and u.team == ateam
-))
-min_worker_ratio = .1
 
 def pickMoveDirection(directions, criteria):
 	atime('pickMoveDirection')
@@ -424,8 +419,12 @@ def get_initial_min_num_workers(initial_karbonite):
 	if initial_karbonite < 400:
 		return initial_num_workers
 	elif initial_karbonite < float('inf'):
-		return initial_num_workers + 1
+		return min(20, initial_num_workers + 1 + initial_karbonite / 400)
 initial_min_num_workers = get_initial_min_num_workers(initial_karbonite)
+min_num_workers = initial_num_workers + 4
+min_worker_ratio = .0
+built_factory = False
+
 
 def dist_to_nearest_kdtree(x, y, tree, dist):
 	atime('dist_to_nearest_kdtree')
@@ -931,6 +930,7 @@ while True:
 				global karbonite
 				global overcharged
 				global built_rocket
+				global built_factory
 				global processed
 				global karbonite_locations
 
@@ -1253,11 +1253,17 @@ while True:
 
 				# try to replicate
 				if ut == w and ( \
-					len(dunits[ateam][f]) > 0 \
+					built_factory \
 					or planet == bc.Planet.Mars \
-					or len(dunits[ateam][w]) < initial_min_num_workers
+					or (
+						len(dunits[ateam][w]) < initial_min_num_workers \
+						and len(dunits[eteam][f]) == 0 \
+						and len(eattackers) == 0 \
+					) \
 				) and ( \
 					len(dunits[ateam][w]) < min_num_workers \
+					or len(dunits[ateam][w]) < initial_min_num_workers \
+						and not built_factory \
 					or len(dunits[ateam][w]) < \
 						len(aunits) * min_worker_ratio \
 					or round_num > 750 \
@@ -1368,6 +1374,7 @@ while True:
 							gc.blueprint(unit.id, f, d)
 							karbonite -= f.blueprint_cost()
 							w_is_busy = True
+							built_factory = True
 							#rprint('built a factory')
 							break
 
