@@ -1739,8 +1739,9 @@ while True:
 						lambda d: dot(rd, d)
 					])
 
-					if direction and gc.can_move(unit.id, direction) and \
-						direction != bc.Direction.Center \
+					if direction is not None \
+						and gc.can_move(unit.id, direction) \
+						and direction != bc.Direction.Center \
 					:
 						gc.move_robot(unit.id, direction)
 						ulocation(unit, gc.unit(unit.id).location)
