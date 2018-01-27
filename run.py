@@ -1235,10 +1235,29 @@ while True:
 										gc.move_robot(uid, fdir)
 
 										ulocation(unit, gc.unit(uid).location)
-										uml = location[uid]
+										uml = location[uid].map_location()
 
 										if mattack([enemy]):
 											#rprint('moma succeeded')
+											while True:
+												healer2 = next((
+													a for a in dunits[ateam][h]
+													if location[a.id].is_on_map()
+													and location[a.id].
+														map_location().
+														is_within_range(
+															a.attack_range(),
+															uml
+														)
+													and health[a.id] > 0
+													and gc.is_overcharge_ready(a.id)
+												), None)
+												if healer2:
+													gc.overcharge(healer2.id, uid)
+													if not mattack(meunits):
+														break
+												else:
+													break
 											pass
 										else:
 											#rprint('moma failed')
