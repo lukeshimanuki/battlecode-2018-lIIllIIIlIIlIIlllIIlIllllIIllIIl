@@ -64,7 +64,10 @@ f = bc.UnitType.Factory
 roam_directions = dict()
 roam_time = dict()
 
-initialBuildQueue = [k,k,k,m,r,h,r,r,h,m]
+initialBuildQueue = [k,k,k,m,r,h,r,r,h,r]
+
+# how many turns since seen knight
+see_knights = 0
 
 def normalize_ratio(ratios):
 	total = sum(ratios.values())
@@ -77,9 +80,9 @@ def desired_unit_ratio(round_num):
 	if round_num < 85:
 		# initial rush stage, probably still using up initial queue
 		return normalize_ratio({
-			r: 0,
-			k: 1,
-			m: 0,
+			r: 2,
+			k: 0,
+			m: 1 if see_knights < 5 else 0,
 			h: 0,
 		})
 	elif round_num < 160:
@@ -87,7 +90,7 @@ def desired_unit_ratio(round_num):
 		return normalize_ratio({
 			r: 2,
 			k: 0,
-			m: 1,
+			m: 1 if see_knights < 5 else 0,
 			h: 1,
 		})
 	elif round_num < 260:
@@ -95,7 +98,7 @@ def desired_unit_ratio(round_num):
 		return normalize_ratio({
 			r: 4,
 			k: 0,
-			m: 2,
+			m: 2 if see_knights < 5 else 0,
 			h: 3,
 		})
 	elif round_num < 510:
@@ -526,6 +529,15 @@ while True:
 			for unit in units
 			if unit.location.is_on_map()
 		}
+
+		# stop building knights if see mage
+		if len(dunits[eteam][m]) > 0:
+			while buildQueue[0] == k and len(buildQueue) >= 2:
+				buildQueue.popleft()
+		# keep track if see knights
+		see_knights += 1
+		if len(dunits[eteam][k]) > 0:
+			see_knights = 0
 
 		def ulocation(unit, loc):
 			uid = unit.id
