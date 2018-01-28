@@ -35,7 +35,7 @@ eteam = bc.Team.Blue if ateam == bc.Team.Red else bc.Team.Red
 random.seed(3142 if ateam == bc.Team.Red else 6283)
 
 research_order = collections.deque([
-	bc.UnitType.Knight,
+	#bc.UnitType.Knight,
 	bc.UnitType.Mage,
 	bc.UnitType.Ranger,
 	bc.UnitType.Healer,
@@ -65,7 +65,7 @@ f = bc.UnitType.Factory
 roam_directions = dict()
 roam_time = dict()
 
-initialBuildQueue = [k,k,k,m,r,h,r,r,h,r]
+initialBuildQueue = [k,k,k,m,r]
 
 # how many turns since seen knight
 see_knights = 0
@@ -78,23 +78,23 @@ def normalize_ratio(ratios):
 	}
 
 def desired_unit_ratio(round_num):
-	if round_num < 85:
+	if round_num < 60:
 		# initial rush stage, probably still using up initial queue
 		return normalize_ratio({
 			r: 2,
 			k: 0,
-			m: 1 if see_knights < 5 else 0,
+			m: 3 if see_knights < 5 else 0,
 			h: 0,
 		})
-	elif round_num < 160:
+	elif round_num < 135:
 		# healers partially upgraded
 		return normalize_ratio({
 			r: 2,
 			k: 0,
-			m: 1 if see_knights < 5 else 0,
-			h: 1,
+			m: 3 if see_knights < 5 else 0,
+			h: 0 if see_knights < 5 else 1,
 		})
-	elif round_num < 260:
+	elif round_num < 235:
 		# after healers upgraded
 		return normalize_ratio({
 			r: 4,
@@ -102,7 +102,7 @@ def desired_unit_ratio(round_num):
 			m: 2 if see_knights < 5 else 0,
 			h: 3,
 		})
-	elif round_num < 510:
+	elif round_num < 485:
 		# overcharge ready
 		return normalize_ratio({
 			r: 4,
