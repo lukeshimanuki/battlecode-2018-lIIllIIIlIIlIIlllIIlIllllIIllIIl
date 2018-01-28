@@ -45,9 +45,10 @@ research_order = collections.deque([
 	bc.UnitType.Mage,
 	bc.UnitType.Mage,
 	bc.UnitType.Rocket,
+	bc.UnitType.Rocket,
+	bc.UnitType.Rocket,
 	bc.UnitType.Ranger,
-	bc.UnitType.Ranger,
-	bc.UnitType.Ranger,
+	bc.UnitType.Worker,
 	bc.UnitType.Worker,
 	bc.UnitType.Worker,
 	bc.UnitType.Worker,
@@ -978,7 +979,10 @@ while True:
 							2,
 							lambda a: a.id != unit.id and a.team == ateam
 						):
-							if gc.can_load(unit.id, a.id):
+							if gc.can_load(unit.id, a.id) and ( \
+								a.unit_type in [m,r,k,h] \
+								or round_num >= 725 \
+							):
 								gc.load(unit.id, a.id)
 								ulocation(a, gc.unit(a.id).location)
 
@@ -1710,7 +1714,7 @@ while True:
 						), 51),
 						None if ut not in [k,r,m,h] or
 							planet != bc.Planet.Earth or
-							round_num < 600 else
+							round_num < 650 else
 							lambda d: -dist_to_nearest(
 								dunits[ateam][t],
 								add(unit, d),
