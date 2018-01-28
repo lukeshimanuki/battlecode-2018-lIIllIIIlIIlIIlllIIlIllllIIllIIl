@@ -83,7 +83,7 @@ def desired_unit_ratio(round_num):
 		return normalize_ratio({
 			r: 2,
 			k: 0,
-			m: 3 if see_knights < 5 else 0,
+			m: 3 if see_knights < 1 else 0,
 			h: 0,
 		})
 	elif round_num < 135:
@@ -91,15 +91,15 @@ def desired_unit_ratio(round_num):
 		return normalize_ratio({
 			r: 2,
 			k: 0,
-			m: 3 if see_knights < 5 else 0,
-			h: 0 if see_knights < 5 else 1,
+			m: 3 if see_knights < 1 else 0,
+			h: 0 if see_knights < 1 else 1,
 		})
 	elif round_num < 235:
 		# after healers upgraded
 		return normalize_ratio({
 			r: 4,
 			k: 0,
-			m: 2 if see_knights < 5 else 0,
+			m: 2 if see_knights < 1 else 0,
 			h: 3,
 		})
 	elif round_num < 485:
@@ -140,6 +140,11 @@ force_move = True
 downsample = 1
 
 buildQueue = collections.deque(initialBuildQueue)
+
+def cat(iterables):
+	for it in iterables:
+		for item in it:
+			yield item
 
 def pickMoveDirection(directions, criteria):
 	atime('pickMoveDirection')
@@ -533,12 +538,21 @@ while True:
 
 		# stop building knights if see mage
 		if len(dunits[eteam][m]) > 0:
-			while buildQueue[0] == k and len(buildQueue) >= 2:
+			while len(buildQueue) > 0 and buildQueue[0] == k:
 				buildQueue.popleft()
 		# keep track if see knights
 		see_knights += 1
 		if len(dunits[eteam][k]) > 0:
 			see_knights = 0
+
+		producing = {
+			utt: sum(
+				u.is_factory_producing() and
+				u.factory_unit_type() == utt
+				for u in dunits[ateam][f]
+			)
+			for utt in [h,m,r,k,w]
+		}
 
 		def ulocation(unit, loc):
 			uid = unit.id
@@ -617,7 +631,9 @@ while True:
 		opriority = [
 			lambda u: u.unit_type in [m,k] and u.ability_heat() >= 10,
 			lambda u: u.unit_type in [m,k] and u.attack_heat() >= 10,
-			#lambda u: u.unit_type in [r] and u.attack_heat() >= 10,
+			lambda u: u.unit_type in [r] and u.attack_heat() >= 10 and (
+				len(dunits[ateam][m]) == 0 #or len(dunits[eteam][r]) == 0
+			),
 			#lambda u: u.unit_type in [h] and u.attack_heat() >= 10,
 			#lambda u: u.unit_type in [m,k] and u.movement_heat() >= 10,
 			#lambda u: u.unit_type in [h,w,r] and u.movement_heat() >= 10,
@@ -632,9 +648,8 @@ while True:
 		#		if location[u.id].is_on_map() and fn(u)
 		#	] for fn in opriority
 		#]
-		if len(dunits[ateam][w]) < min_num_workers \
+		if len(dunits[ateam][w]) + producing[w] == 0 \
 			and (len(buildQueue) == 0 or buildQueue[0] != w) \
-			and all([u.ability_cooldown() < 20 for u in dunits[ateam][w]]) \
 		:
 			buildQueue.appendleft(w)
 
@@ -885,6 +900,14 @@ while True:
 					lambda u: True
 				)
 			)
+		mbeunits = sorted(sorted(
+			[
+				e for e in eunits
+				if location[e.id].is_on_map()
+				and mev(e) < 0
+			],
+			key=mev
+		), key=lambda e: enemy_attack_priority[e.unit_type])
 		meunits = sorted(
 			[
 				e for e in eunits
@@ -1056,18 +1079,16 @@ while True:
 									ulocation(uu, uu.location)
 								break
 
-					if gc.can_produce_robot(unit.id, buildQueue[0]) \
-						and not gtm \
+					if gc.can_produce_robot( \
+							unit.id, \
+							buildQueue[0] if len(buildQueue) > 0 else r \
+						) and not gtm \
 						and not at_unit_cap \
 						and len(unit.structure_garrison()) < 7 \
 					:
-						gc.produce_robot(unit.id, buildQueue[0])
-						karbonite -= buildQueue[0].factory_cost()
-						#rprint("produced a {}".format(buildQueue[0]))
-						buildQueue.popleft()
 						if len(buildQueue) == 0:
 							ratio = {
-								ut: len(dunits[ateam][ut])
+								ut: len(dunits[ateam][ut]) + producing[ut]
 								for ut in [h,r,m,k]
 							}
 							dratio = desired_unit_ratio(round_num)
@@ -1080,8 +1101,13 @@ while True:
 							next_unit = min([r,h,m,k], key=lambda ut: frac[ut])
 							buildQueue.append(next_unit)
 
-							if len(dunits[ateam][w]) == 0:
-								buildQueue.appendleft(w)
+							#if len(dunits[ateam][w]) == 0:
+							#	buildQueue.appendleft(w)
+						gc.produce_robot(unit.id, buildQueue[0])
+						producing[buildQueue[0]] += 1
+						karbonite -= buildQueue[0].factory_cost()
+						#rprint("produced a {}".format(buildQueue[0]))
+						buildQueue.popleft()
 
 				btime(10)
 				atime(12)
@@ -1141,9 +1167,9 @@ while True:
 
 							if gc.is_attack_ready(unit.id):
 								# no enemies in range -> blink forwards and attack
-								# pick closest enemy
+								# pick close enemy
 								enemy = next((
-									e for e in dunits[eteam][r]
+									e for e in mbunits
 									if health[e.id] > 0
 									and location[e.id].is_on_map()
 									and dist_n_steps(
