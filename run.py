@@ -621,7 +621,8 @@ while True:
 		estructuresv_eunits = estructuresv + eunits
 		estructuresv_eunits_s = estructuresv_eunits[::downsample]
 
-		build_factories = karbonite >= 200
+		build_factories = karbonite >= f.blueprint_cost()
+		should_build_rocket = karbonite >= t.blueprint_cost()
 
 		# overcharge priority
 		def needs_overcharge(ally):
@@ -648,10 +649,10 @@ while True:
 		#		if location[u.id].is_on_map() and fn(u)
 		#	] for fn in opriority
 		#]
-		if len(dunits[ateam][w]) + producing[w] == 0 \
-			and (len(buildQueue) == 0 or buildQueue[0] != w) \
-		:
-			buildQueue.appendleft(w)
+		#if len(dunits[ateam][w]) + producing[w] == 0 \
+		#	and (len(buildQueue) == 0 or buildQueue[0] != w) \
+		#:
+		#	buildQueue.appendleft(w)
 
 		def add(unit, direction):
 			return location[unit.id].map_location().add(direction)
@@ -838,9 +839,14 @@ while True:
 					else sum([
 						pmap.on_map(add(a, d).add(dd)) and
 						pmap.is_passable_terrain_at(add(a, d).add(dd)) and (
-							ml_hash(add(a, d).add(dd)) not in munits or
-							munits[ml_hash(add(a, d).add(dd))].
-								unit_type not in [f,t]
+							(
+								add(a, d).add(dd).x,
+								add(a, d).add(dd).y
+							) not in munits or
+							munits[(
+								add(a, d).add(dd).x,
+								add(a, d).add(dd).y
+							)].unit_type not in [f,t]
 						)
 						for dd in directions
 					])
@@ -869,6 +875,7 @@ while True:
 				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
 					aggressive_attacker_count
 			) or round_num > 600
+			or True
 		)
 
 		# sort enemies in order of who we want to attack
@@ -1079,6 +1086,11 @@ while True:
 									ulocation(uu, uu.location)
 								break
 
+					if len(dunits[ateam][w]) + producing[w] == 0 \
+						and gc.can_produce_robot(uid, w) \
+					:
+						gc.produce_robot(uid, w)
+
 					if gc.can_produce_robot( \
 							unit.id, \
 							buildQueue[0] if len(buildQueue) > 0 else r \
@@ -1169,7 +1181,7 @@ while True:
 								# no enemies in range -> blink forwards and attack
 								# pick close enemy
 								enemy = next((
-									e for e in mbunits
+									e for e in mbeunits
 									if health[e.id] > 0
 									and location[e.id].is_on_map()
 									and dist_n_steps(
@@ -1359,6 +1371,9 @@ while True:
 					or len(dunits[ateam][w]) < \
 						len(aunits) * min_worker_ratio \
 					or round_num > 750 \
+				) and ( \
+					not gtm
+					or planet == bc.Planet.Mars \
 				):
 					nearby_bps = adjacent(
 						location[unit.id].map_location(),
@@ -1859,12 +1874,22 @@ while True:
 		# if should build rocket but didn't, make space by disintegrating
 		if not built_rocket and ( \
 			gtm and \
-			gc.karbonite() > t.blueprint_cost() and \
+			should_build_rocket and \
 			len([ \
 				a
 				for a in dunits[ateam][t]
 				if location[a.id].is_on_map()
-			]) == 0 \
+			]) == 0 and \
+			len(dunits[ateam][w]) > 0 and \
+			all( \
+				not any( \
+					on_pmap(add(u, d)) and \
+					pmap.is_passable_terrain_at(add(u, d)) and \
+					(add(u, d).x, add(u, d).y) not in munits
+					for d in directions \
+				) \
+				for u in dunits[ateam][w] \
+			) \
 		):
 			for unit in dunits[ateam][w]:
 				if gc.can_sense_unit(unit.id):
