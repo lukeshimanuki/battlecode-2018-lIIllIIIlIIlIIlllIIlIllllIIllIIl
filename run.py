@@ -23,10 +23,10 @@ prev_time = dict()
 runtime = collections.defaultdict(int)
 def atime(i):
 	global prev_time
-	prev_time[i] = time.time()
+	#prev_time[i] = time.time()
 	pass
 def btime(i):
-	runtime[i] += time.time() - prev_time[i]
+	#runtime[i] += time.time() - prev_time[i]
 	pass
 
 ateam = gc.team()
@@ -147,7 +147,7 @@ def cat(iterables):
 			yield item
 
 def pickMoveDirection(directions, criteria):
-	atime('pickMoveDirection')
+	#atime('pickMoveDirection')
 
 	if len(directions) == 0:
 		return None
@@ -169,7 +169,7 @@ def pickMoveDirection(directions, criteria):
 		if score >= float(int(best_score)) - 1e-6
 	]
 
-	btime('pickMoveDirection')
+	#btime('pickMoveDirection')
 
 	return pickMoveDirection(best_directions, criteria[1:])
 
@@ -203,7 +203,7 @@ def cantor_pair(a, b):
 #	#c = cantor_pair(a, b)
 #	return c
 def ml_pair_hash(x1, y1, x2, y2):
-	#atime('ml_pair_hash')
+	##atime('ml_pair_hash')
 	return (x1 << 18) | (y1 << 12) | (x2 << 6) | y2
 	#c *= pmap.height
 	#c += y1
@@ -211,7 +211,7 @@ def ml_pair_hash(x1, y1, x2, y2):
 	#c += x2
 	#c *= pmap.height
 	#c += y2
-	#btime('ml_pair_hash')
+	##btime('ml_pair_hash')
 	#a = cantor_pair(ml1.x, ml1.y)
 	#b = cantor_pair(ml2.x, ml2.y)
 	#c = cantor_pair(a, b)
@@ -311,7 +311,7 @@ try:
 				x2 = bx2 + dx
 				if x2 >= 0 and x2 < pmap_width:
 					for dy in dd:
-						#atime('loop')
+						##atime('loop')
 						y2 = by2 + dy
 						if (dx != 0 or dy != 0) \
 							and y2 >= 0 and y2 < pmap_height \
@@ -321,7 +321,7 @@ try:
 								x2, y2 \
 							)] == 2501 \
 						:
-							#atime('cond')
+							##atime('cond')
 							mdistances[ml_pair_hash(x1, y1, x2, y2)] = dist
 							mdistances[ml_pair_hash(x2, y2, x1, y1)] = dist
 
@@ -338,8 +338,8 @@ try:
 							ns[4 * ns_idx + 7] = y1
 
 							ns_idx += 2
-							#btime('cond')
-						#btime('loop')
+							##btime('cond')
+						##btime('loop')
 
 		curr_time = time.time() - start
 
@@ -436,12 +436,12 @@ built_factory = False
 
 
 def dist_to_nearest_kdtree(x, y, tree, dist):
-	atime('dist_to_nearest_kdtree')
+	#atime('dist_to_nearest_kdtree')
 	if not tree:
 		return 0
 	kx, ky = tree.search_nn((x, y))[0].data
 	result = mdist_c(x, y, kx, ky)
-	btime('dist_to_nearest_kdtree')
+	#btime('dist_to_nearest_kdtree')
 	return result
 
 # get mars locations
@@ -490,7 +490,7 @@ while True:
 		print("{}: {}".format(round_num, string))
 
 	try:
-		atime(0)
+		#atime(0)
 
 		start = time.time()
 
@@ -689,7 +689,7 @@ while True:
 		sunk_danger = {unit.id: 0 for unit in eattackers}
 
 		def marginal_danger_from(unit, ml, enemy):
-			#atime('marginal_danger_from')
+			##atime('marginal_danger_from')
 			#return max(0,
 			#	value(unit) *
 			#	max(unit.health, enemy.damage()) * (
@@ -705,39 +705,39 @@ while True:
 				(1 if can_attack(enemy, ml) else 0) -
 				sunk_danger[enemy.id]
 			)
-			#btime('marginal_danger_from')
+			##btime('marginal_danger_from')
 			return result
 
 		def marginal_danger(unit, ml, f, enemies=eattackers):
-			atime('marginal_danger')
+			#atime('marginal_danger')
 			result = sum(
 				marginal_danger_from(unit, ml, enemy)
 				for enemy in enemies
 				#if f(enemy) and can_attack(enemy, ml)
 			)
-			btime('marginal_danger')
+			#btime('marginal_danger')
 			return result
 
 		def update_sunk_danger(unit, ml, enemies=eattackers, sunk_danger_cache=None):
-			atime('update_sunk_danger')
+			#atime('update_sunk_danger')
 			for enemy in enemies:
 				sunk_danger[enemy.id] += marginal_danger_from(unit, ml, enemy)
-			btime('update_sunk_danger')
+			#btime('update_sunk_danger')
 
 		def exists_nearby(units, ml, r, f):
-			atime('exists_nearby')
+			#atime('exists_nearby')
 			for unit in units:
 				if location[unit.id].is_on_map() and \
 					f(unit) and \
 					location[unit.id].map_location().is_within_range(r, ml) \
 				:
-					btime('exists_nearby')
+					#btime('exists_nearby')
 					return True
-			btime('exists_nearby')
+			#btime('exists_nearby')
 			return False
 
 		def nearby(units, ml, r, f):
-			atime('nearby')
+			#atime('nearby')
 			result = [
 				unit
 				for unit in units
@@ -745,13 +745,13 @@ while True:
 				and location[unit.id].is_on_map()
 				and location[unit.id].map_location().is_within_range(r, ml)
 			]
-			btime('nearby')
+			#btime('nearby')
 			return result
 
 		def dist_to_nearest(units, ml, f, stop_min_dist=0, distance= \
 			lambda ml1, ml2: ml1.distance_squared_to(ml2)
 		):
-			atime('dist_to_nearest')
+			#atime('dist_to_nearest')
 
 			min_dist = None
 			for unit in units:
@@ -760,19 +760,19 @@ while True:
 					if not min_dist or dist < min_dist:
 						min_dist = dist
 						if dist < stop_min_dist:
-							btime('dist_to_nearest')
+							#btime('dist_to_nearest')
 							return stop_min_dist
 
 			if not min_dist:
-				btime('dist_to_nearest')
+				#btime('dist_to_nearest')
 				return max_path_length ** 2 + 2501
 
-			btime('dist_to_nearest')
+			#btime('dist_to_nearest')
 
 			return min_dist
 
 		def adjacent(ml, r, f):
-			atime('adjacent')
+			#atime('adjacent')
 			x, y = ml.x, ml.y
 			loc = [
 				(x + 1, y),
@@ -792,7 +792,7 @@ while True:
 				if um in munits
 				and f(munits[um])
 			]
-			btime('adjacent')
+			#btime('adjacent')
 			return result
 
 		def dot(d1, d2):
@@ -968,7 +968,7 @@ while True:
 		at_unit_cap = sum(len(dunits[ateam][ut]) for ut in [k,m,r]) > \
 			aggressive_attacker_count
 
-		btime(0)
+		#btime(0)
 
 		for utt in [t, w, f, m, k, r, h]:
 			if gc.get_time_left_ms() < 1000:
@@ -983,7 +983,7 @@ while True:
 				global processed
 				global karbonite_locations
 
-				atime(10)
+				#atime(10)
 
 				processed.add(unit.id)
 
@@ -1006,7 +1006,7 @@ while True:
 
 				ut = unit.unit_type
 
-				atime("ut{}".format(ut))
+				#atime("ut{}".format(ut))
 
 				if ut == t:
 					if planet == bc.Planet.Earth:
@@ -1121,8 +1121,8 @@ while True:
 						#rprint("produced a {}".format(buildQueue[0]))
 						buildQueue.popleft()
 
-				btime(10)
-				atime(12)
+				#btime(10)
+				#atime(12)
 
 				# knight / ranger attack
 				def attack():
@@ -1352,8 +1352,8 @@ while True:
 								if health[enemy.id] > unit.damage() else 0
 							break
 
-				btime(12)
-				atime(15)
+				#btime(12)
+				#atime(15)
 
 				# try to replicate
 				if ut == w and ( \
@@ -1421,8 +1421,8 @@ while True:
 							karbonite -= w.replicate_cost()
 							#rprint('replicated')
 
-				btime(15)
-				atime(16)
+				#btime(15)
+				#atime(16)
 
 				# build or repair
 				w_is_busy = (gc.unit(unit.id).worker_has_acted() if
@@ -1521,8 +1521,8 @@ while True:
 							if not karbonite_locations.is_balanced:
 								karbonite_locations = karbonite_locations.rebalance()
 
-				btime(16)
-				atime(18)
+				#btime(16)
+				#atime(18)
 
 				# heal
 				if ut == h and gc.is_heal_ready(unit.id):
@@ -1572,10 +1572,10 @@ while True:
 				if ut in [k,m,r]:
 					aggressive = True
 
-				btime(18)
-				atime(20)
+				#btime(18)
+				#atime(20)
 
-				atime(21)
+				#atime(21)
 				reattackers = filter(
 					eattackers_s,
 					lambda e: location[e.id].is_within_range(
@@ -1593,7 +1593,7 @@ while True:
 						location[unit.id]
 					)
 				)
-				btime(21)
+				#btime(21)
 
 				# don't move if low on time
 				# because movement is expensive
@@ -1851,9 +1851,9 @@ while True:
 				else:
 					health[unit.id] = 0
 
-				btime(20)
+				#btime(20)
 
-				btime("ut{}".format(ut))
+				#btime("ut{}".format(ut))
 
 			for unit in dunits[ateam][utt]:
 				try:
@@ -1869,7 +1869,7 @@ while True:
 				rprint("error: {}".format(e))
 				traceback.print_exc()
 
-		atime(30)
+		#atime(30)
 
 		# if should build rocket but didn't, make space by disintegrating
 		if not built_rocket and ( \
@@ -1907,8 +1907,8 @@ while True:
 						if disintegrated:
 							break
 
-		btime(30)
-		atime(40)
+		#btime(30)
+		#atime(40)
 
 		if round_num % 5 == 0:
 			gcollector.collect()
@@ -1929,7 +1929,7 @@ while True:
 			aggressive_attacker_count = 20
 			rprint('##### RAN OUT OF TIME #####')
 
-		btime(40)
+		#btime(40)
 
 	except Exception as e:
 		rprint("error: {}".format(e))
