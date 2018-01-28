@@ -607,6 +607,8 @@ while True:
 		estructuresv_eunits = estructuresv + eunits
 		estructuresv_eunits_s = estructuresv_eunits[::downsample]
 
+		build_factories = karbonite >= 200
+
 		# overcharge priority
 		def needs_overcharge(ally):
 			return ally.ability_heat() >= 10 or \
@@ -820,16 +822,20 @@ while True:
 						not pmap.is_passable_terrain_at(add(a, d))
 					else sum([
 						pmap.on_map(add(a, d).add(dd)) and
-						pmap.is_passable_terrain_at(add(a, d).add(dd))
+						pmap.is_passable_terrain_at(add(a, d).add(dd)) and (
+							ml_hash(add(a, d).add(dd)) not in munits or
+							munits[ml_hash(add(a, d).add(dd))].
+								unit_type not in [f,t]
+						)
 						for dd in directions
 					])
 					for d in directions
 				)
 			),
 			# next tu structures
-			key=lambda a: -len(adjacent(a.location.map_location(), 2,
-				lambda u: u.unit_type in [f,t] and u.health < u.max_health
-			)) if a.location.is_on_map() else float('-inf')
+			key=lambda a: 0# -len(adjacent(a.location.map_location(), 2,
+			#	lambda u: u.unit_type in [f,t] and u.health < u.max_health
+			#)) if a.location.is_on_map() else float('-inf')
 		)
 
 		dunits[ateam][f] = sorted(dunits[ateam][f], key=lambda a:
@@ -1408,7 +1414,7 @@ while True:
 							w_is_busy = True
 
 				# build factory / rocket
-				if ut == w and not w_is_busy and karbonite > min( \
+				if ut == w and not w_is_busy and build_factories and karbonite > min( \
 					f.blueprint_cost(), \
 					t.blueprint_cost() \
 				):
@@ -1465,7 +1471,7 @@ while True:
 								0,
 								actual_k - unit.worker_harvest_amount(),
 							)
-							w_is_busy = True
+							#w_is_busy = True
 						karbonite_at[kc] = actual_k
 						if actual_k == 0:
 							karbonite_locations = karbonite_locations.remove(
@@ -1736,12 +1742,12 @@ while True:
 						#		mdist(uml, location[unit.id].map_location())
 						#		for ml in deposits
 						#	] + [float('5000')]),
-						None if ut != w else lambda d: -dist_to_nearest_kdtree(
+						None if ut != w else lambda d: min(-dist_to_nearest_kdtree(
 							uml_x + d.dx(),
 							uml_y + d.dy(),
 							karbonite_locations,
 							mdist_c,
-						),
+						), -1),
 
 						# knight avoiding damage is low priority
 						None if ut not in [k] else lambda d: -marginal_danger(
