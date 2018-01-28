@@ -129,7 +129,7 @@ def uhml(tup):
 def filter(data, f):
 	return [d for d in data if f]
 
-aggressive_attacker_count = 30
+aggressive_attacker_count = 50
 nonaggressive_threshold = 1.0
 aggressive_threshold = .5
 min_num_factories = 5
