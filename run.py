@@ -1455,7 +1455,7 @@ while True:
 							w_is_busy = True
 
 				# build factory / rocket
-				if ut == w and not w_is_busy and build_factories and karbonite > min( \
+				if ut == w and not w_is_busy and karbonite > min( \
 					f.blueprint_cost(), \
 					t.blueprint_cost() \
 				):
@@ -1476,7 +1476,8 @@ while True:
 							break
 						elif gc.can_blueprint(unit.id, f, d) and ( \
 							len(dunits[ateam][f]) < min_num_factories or \
-							not at_unit_cap and karbonite > 200 \
+							not at_unit_cap and karbonite > 200 and \
+							built_factory \
 						):
 							gc.blueprint(unit.id, f, d)
 							karbonite -= f.blueprint_cost()
@@ -1735,6 +1736,18 @@ while True:
 						#	),
 
 						# macro
+						None if ut not in [k,r,m,h] or
+							planet != bc.Planet.Earth or
+							round_num < 650 else
+							lambda d: -dist_to_nearest(
+								dunits[ateam][t],
+								add(unit, d),
+								lambda a: location[a.id].is_on_map() and
+									len(a.structure_garrison()) <
+										a.structure_max_capacity(),
+								1,
+								mdist
+							),
 						None if ut != w else lambda d: -dist_to_nearest(
 							bunits,
 							add(unit, d),
@@ -1759,17 +1772,6 @@ while True:
 							lambda e: True,
 							50,
 						), 51),
-						None if ut not in [k,r,m,h] or
-							planet != bc.Planet.Earth or
-							round_num < 650 else
-							lambda d: -dist_to_nearest(
-								dunits[ateam][t],
-								add(unit, d),
-								lambda a: location[a.id].is_on_map() and
-									len(a.structure_garrison()) < 4,
-								1,
-								mdist
-							),
 						None if ut not in [k,r,m] else
 							lambda d: min(-dist_to_nearest(
 								estructuresv_eunits_s,
