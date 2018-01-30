@@ -488,6 +488,7 @@ processed = None
 while True:
 	def rprint(string):
 		print("{}: {}".format(round_num, string))
+		return string
 
 	try:
 		#atime(0)
@@ -821,7 +822,7 @@ while True:
 		ecentroid = centroid(eunits + list(estructures.values()))
 
 		dunits[ateam][w] = sorted(sorted(sorted(dunits[ateam][w],
-			# closer to enemies
+			# farther from enemies
 			key=lambda a: (a.location.
 				map_location().
 				distance_squared_to(ecentroid) * (
@@ -830,12 +831,13 @@ while True:
 				if a.location.is_on_map() else float('inf')
 			),
 			# good build locations if building factory
-			key=lambda a: 0 if karbonite < f.blueprint_cost() else
+			key=lambda a: 0 if karbonite < t.blueprint_cost() else
 				-max(
 					-1 if
 						not a.location.is_on_map() or
 						not pmap.on_map(add(a, d)) or
-						not pmap.is_passable_terrain_at(add(a, d))
+						not pmap.is_passable_terrain_at(add(a, d)) or
+						(add(a, d).x, add(a, d).y) in munits
 					else sum([
 						pmap.on_map(add(a, d).add(dd)) and
 						pmap.is_passable_terrain_at(add(a, d).add(dd)) and (
@@ -853,7 +855,7 @@ while True:
 					for d in directions
 				)
 			),
-			# next tu structures
+			# next to structures
 			key=lambda a: 0# -len(adjacent(a.location.map_location(), 2,
 			#	lambda u: u.unit_type in [f,t] and u.health < u.max_health
 			#)) if a.location.is_on_map() else float('-inf')
@@ -1462,16 +1464,27 @@ while True:
 							w_is_busy = True
 
 				# build factory / rocket
-				if ut == w and not w_is_busy and karbonite > min( \
-					f.blueprint_cost(), \
-					t.blueprint_cost() \
+				if ut == w and planet == bc.Planet.Earth and not w_is_busy \
+					and karbonite > min( \
+						f.blueprint_cost(), \
+						t.blueprint_cost() \
 				):
 					bdirections = sorted(directions, key=lambda d: -len([
 						dd
 						for dd in directions
 						if pmap.on_map(add(unit, d).add(dd))
-						and gc.can_sense_location(add(unit, d).add(dd))
-						and gc.is_occupiable(add(unit, d).add(dd))
+						#and gc.can_sense_location(add(unit, d).add(dd))
+						#and gc.is_occupiable(add(unit, d).add(dd))
+						and pmap.is_passable_terrain_at(add(unit, d).add(dd)) and (
+							(
+								add(unit, d).add(dd).x,
+								add(unit, d).add(dd).y
+							) not in munits or
+							munits[(
+								add(unit, d).add(dd).x,
+								add(unit, d).add(dd).y
+							)].unit_type not in [f,t]
+						)
 					]))
 					for d in bdirections:
 						if gc.can_blueprint(unit.id, t, d) and gtm:
@@ -1508,12 +1521,9 @@ while True:
 					kx = uml.x + d.dx()
 					ky = uml.y + d.dy()
 					kc = ml_hash_c(kx, ky)
-					if karbonite_at[kc] > 0:
-						actual_k = gc.karbonite_at(bc.MapLocation(
-							planet,
-							kx,
-							ky)
-						)
+					kml = bc.MapLocation(planet, kx, ky)
+					if karbonite_at[kc] > 0 and gc.can_sense_location(kml):
+						actual_k = gc.karbonite_at(kml)
 						if actual_k > 0:
 							gc.harvest(unit.id, d)
 							actual_k = max(
