@@ -483,6 +483,7 @@ printed_ran_out_of_time = False
 karbonite = None
 overcharged = None
 built_rocket = None
+uml = None
 processed = None
 
 while True:
@@ -629,7 +630,7 @@ while True:
 				ally.movement_heat() >= 10
 		opriority = [
 			lambda u: u.unit_type in [m,k] and u.ability_heat() >= 10,
-			lambda u: u.unit_type in [m,k] and u.attack_heat() >= 10,
+			#lambda u: u.unit_type in [m,k] and u.attack_heat() >= 10,
 			lambda u: u.unit_type in [r] and u.attack_heat() >= 10 and (
 				len(dunits[ateam][m]) == 0 #or len(dunits[eteam][r]) == 0
 			),
@@ -684,7 +685,7 @@ while True:
 			) * (1 if unit.team == ateam else -1)
 
 		def can_attack(unit, ml):
-			if unit.unit_type not in [k,m,r]:
+			if unit.unit_type not in [k,m,r,h]:
 				return False
 			if not location[unit.id].is_on_map():
 				return False
@@ -1003,6 +1004,7 @@ while True:
 				global built_rocket
 				global built_factory
 				global processed
+				global uml
 				global karbonite_locations
 
 				atime(10)
@@ -1184,186 +1186,203 @@ while True:
 							return enemy
 					return None
 
+				def dist_n_steps(a, b, n):
+					dx = max(0, abs(b.x - a.x) - 2)
+					dy = max(0, abs(b.y - a.y) - 2)
+					return dx * dx + dy * dy
+
+				def he(ml):
+					healer = next((
+						a
+						for a in ohealers.values()
+						if can_attack(a, ml)
+					), None)
+					enemy = next((
+						e
+						for e in mbeunits
+						if health[e.id] > 0
+						and location[e.id].map_location().is_within_range(
+							unit.attack_range(),
+							ml
+						)
+					), None)
+
+					return healer, enemy
+
+				def possible_dests(mcan_move, mcan_blink):
+					if mcan_move and mcan_blink:
+						return gc.all_locations_within(uml, 18)
+					elif mcan_blink:
+						return gc.all_locations_within(uml, 8)
+					elif mcan_move:
+						return (add(unit, d) for d in bc.Direction)
+					else:
+						return (uml,)
+
+				def get_to_dest(ml, mcan_move, mcan_blink):
+					global uml
+					if not on_pmap(ml) \
+						or not pmap.is_passable_terrain_at(ml) \
+						or (ml.x, ml.y) in munits \
+					:
+						return False
+
+					if uml.distance_squared_to(ml) == 0:
+						return True
+
+					if mcan_blink and mcan_move:
+						# try move
+						if ml.is_within_range(2, uml):
+							direction = uml.direction_to(ml)
+							gc.move_robot(uid, direction)
+							ulocation(unit, gc.unit(uid).location)
+							uml = location[uid].map_location()
+							return True
+						# try blink
+						if ml.is_within_range(8, uml):
+							gc.blink(uid, ml)
+							ulocation(unit, gc.unit(uid).location)
+							uml = location[uid].map_location()
+							return True
+						# try move-blink
+						for d in directions:
+							if add(unit, d).is_within_range(8, ml) and ( \
+								d == bc.Direction.Center or \
+								gc.can_move(uid, d) \
+							):
+								gc.move_robot(uid, d)
+								gc.blink(uid, ml)
+								ulocation(unit, gc.unit(uid).location)
+								uml = location[uid].map_location()
+								return True
+						# try blink-move
+						for d in directions:
+							iml = ml.add(d)
+							if gc.can_blink(uid, iml):
+								gc.blink(uid, iml)
+								gc.move_robot(uid, d.opposite())
+								ulocation(unit, gc.unit(uid).location)
+								uml = location[uid].map_location()
+								return True
+						return False
+					elif mcan_blink:
+						if ml.is_within_range(8, uml):
+							gc.blink(uid, ml)
+							ulocation(unit, gc.unit(uid).location)
+							uml = location[uid].map_location()
+							return True
+						else:
+							return False
+					elif mcan_move:
+						if ml.is_within_range(2, uml):
+							direction = uml.direction_to(ml)
+							gc.move_robot(uid, direction)
+							ulocation(unit, gc.unit(uid).location)
+							uml = location[uid].map_location()
+							return True
+						else:
+							return False
+					else:
+						return False
+
+				def flying_mages(mcan_move, mcan_blink):
+					# try to attack and get overcharged
+					for ml in possible_dests(mcan_move, mcan_blink):
+						if not on_pmap(ml) \
+							or not pmap.is_passable_terrain_at(ml) \
+							or (ml.x, ml.y) in munits \
+						:
+							continue
+
+						uh, ue = he(ml)
+						if uh and ue:
+							if not get_to_dest(ml, mcan_move, mcan_blink):
+								continue
+
+							mattack([ue])
+							gc.overcharge(uh.id, uid)
+							ohealers.pop(uh.id)
+							#rprint('flying mages')
+							flying_mages(True, can_blink)
+							return True
+
+					# just try to attack
+					for ml in possible_dests(mcan_move, mcan_blink):
+						if not on_pmap(ml) \
+							or not pmap.is_passable_terrain_at(ml) \
+							or (ml.x, ml.y) in munits \
+						:
+							continue
+
+						uh, ue = he(ml)
+						if ue:
+							if not get_to_dest(ml, mcan_move, mcan_blink):
+								continue
+
+							mattack([ue])
+							return True
+
 				if ut == m:
-					mcan_attack = gc.is_attack_ready(unit.id)
-					if mcan_attack:
-						rmeunits = [
-							e for e in meunits
-							if health[e.id] > 0 \
-							and location[e.id].map_location().is_within_range(
-								int((unit.attack_range()**.5 +
-								unit.ability_range()**.5 + 0) ** 2),
-								uml
-							)
-						]
+					if unit.attack_heat() < 10:
+						flying_mages(
+							gc.is_move_ready(uid),
+							can_blink and gc.is_blink_ready(uid),
+						)
 
-						mattack(rmeunits)
+					# try to move-overcharge-move attack
+					if can_overcharge and not can_blink and gc.is_move_ready(uid):
+						# pick closest enemy
+						enemy = next((
+							e for e in mbeunits
+							if health[e.id] > 0
+							and location[e.id].is_on_map()
+							and dist_n_steps(
+								location[e.id].map_location(),
+								uml,
+								2
+							) <= unit.attack_range()
+						), None)
 
-						def dist_n_steps(a, b, n):
-							dx = max(0, abs(b.x - a.x) - 2)
-							dy = max(0, abs(b.y - a.y) - 2)
-							return dx * dx + dy * dy
+						if enemy:
+							eml = location[enemy.id].map_location()
 
-						if unit.ability_heat() < 10 and can_blink:
+							# get intermediate movement / location
+							idir = uml.direction_to(eml)
+							iml = uml.add(idir)
 
-							if gc.is_attack_ready(unit.id):
-								# no enemies in range -> blink forwards and attack
-								# pick close enemy
-								enemy = next((
-									e for e in mbeunits
-									if health[e.id] > 0
-									and location[e.id].is_on_map()
-									and dist_n_steps(
-										location[e.id].map_location(),
-										uml,
-										2
-									) <= unit.attack_range()
+							# get final movement / location
+							fdir = iml.direction_to(eml)
+							fml = iml.add(fdir)
+
+							if (iml.x, iml.y) not in munits \
+								and (fml.x, fml.y) not in munits \
+								and pmap.is_passable_terrain_at(iml) \
+								and pmap.is_passable_terrain_at(fml) \
+							:
+								healer = next((
+									a for a in ohealers.values()
+									if location[a.id].is_on_map()
+									and location[a.id].
+										map_location().
+										is_within_range(
+											a.attack_range(),
+											iml
+										)
+									and health[a.id] > 0
 								), None)
 
-								if enemy:
-									eml = location[enemy.id].map_location()
+								if healer:
+									gc.move_robot(uid, idir)
+									ulocation(unit, gc.unit(uid).location)
+									uml = location[uid].map_location()
+									if gc.is_attack_ready(uid):
+										mattack(mbeunits)
+									gc.overcharge(healer.id, uid)
+									ohealers.pop(healer.id)
+									#rprint('running mages')
 
-									oml = uml
+									flying_mages(True, can_blink)
 
-									# get intermediate movement / location
-									idir = uml.direction_to(eml)
-									iml = uml.add(idir)
-
-									# get final movement / location
-									fdir = iml.direction_to(eml)
-									fml = iml.add(fdir)
-
-									if gc.can_blink(unit.id, fml):
-										gc.blink(unit.id, fml)
-										ulocation(
-											unit,
-											bc.Location.new_on_map(fml)
-										)
-										uml = fml
-										if mattack([enemy]):
-											#rprint('blink-attack succeeded')
-											got_overcharged = False
-											while True:
-												healer2 = next((
-													a for a in ohealers.values()
-													if location[a.id].is_on_map()
-													and location[a.id].
-														map_location().
-														is_within_range(
-															a.attack_range(),
-															uml
-														)
-													and health[a.id] > 0
-												), None)
-												if healer2:
-													gc.overcharge(healer2.id, uid)
-													ohealers.pop(healer2.id)
-													got_overcharged = True
-													if not mattack(meunits):
-														break
-												else:
-													break
-											if got_overcharged:
-												gc.blink(uid, oml)
-											pass
-										else:
-											#rprint('blink-attack failed')
-											pass
-							else:
-								# enemies in range -> blink back
-								#bml = gc.all_locations_within(
-								#	uml,
-								#	unit.ability_range()
-								#)
-								#ml = max(bml, key=lambda ml: dist_to_nearest(
-								#	eattackers,
-								#	ml,
-								#	lambda u: True
-								#))
-								#gc.blink(unit.id, ml)
-								#ulocation(unit, ml)
-								#uml = ml
-								pass
-
-						# try to move-overcharge-move attack
-						if can_overcharge \
-							and not can_blink \
-							and unit.movement_heat() < 10 \
-						:
-							# pick closest enemy
-							enemy = next((
-								e for e in mbeunits
-								if health[e.id] > 0
-								and location[e.id].is_on_map()
-								and dist_n_steps(
-									location[e.id].map_location(),
-									uml,
-									2
-								) <= unit.attack_range()
-							), None)
-
-							if enemy:
-								eml = location[enemy.id].map_location()
-
-								# get intermediate movement / location
-								idir = uml.direction_to(eml)
-								iml = uml.add(idir)
-
-								# get final movement / location
-								fdir = iml.direction_to(eml)
-								fml = iml.add(fdir)
-
-								if (iml.x, iml.y) not in munits \
-									and (fml.x, fml.y) not in munits \
-									and pmap.is_passable_terrain_at(iml) \
-									and pmap.is_passable_terrain_at(fml) \
-								:
-									healer = next((
-										a for a in ohealers.values()
-										if location[a.id].is_on_map()
-										and location[a.id].
-											map_location().
-											is_within_range(
-												a.attack_range(),
-												iml
-											)
-										and health[a.id] > 0
-									), None)
-
-									if healer:
-										gc.move_robot(uid, idir)
-										gc.overcharge(healer.id, uid)
-										ohealers.pop(healer.id)
-										gc.move_robot(uid, fdir)
-
-										ulocation(unit, gc.unit(uid).location)
-										uml = location[uid].map_location()
-
-										if mattack([enemy]):
-											#rprint('moma succeeded')
-											while True:
-												healer2 = next((
-													a for a in ohealers.values()
-													if location[a.id].is_on_map()
-													and location[a.id].
-														map_location().
-														is_within_range(
-															a.attack_range(),
-															uml
-														)
-													and health[a.id] > 0
-												), None)
-												if healer2:
-													gc.overcharge(healer2.id, uid)
-													ohealers.pop(healer2.id)
-													if not mattack(meunits):
-														break
-												else:
-													break
-											pass
-										else:
-											#rprint('moma failed')
-											pass
 				if health[uid] == 0:
 					return
 
@@ -1868,7 +1887,7 @@ while True:
 				if ut in [k,r] and gc.is_attack_ready(unit.id):
 					attack()
 				if ut in [m] and gc.is_attack_ready(uid):
-					mattack(rmeunits)
+					mattack(mbeunits)
 
 				if gc.can_sense_unit(unit.id):
 					u = gc.unit(unit.id)
