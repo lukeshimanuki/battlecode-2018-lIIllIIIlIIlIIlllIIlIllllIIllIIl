@@ -1010,6 +1010,10 @@ while True:
 
 				if ut == t:
 					if planet == bc.Planet.Earth:
+						has_worker = any(
+							iunits[u_id].unit_type == w
+							for u_id in unit.structure_garrison()
+						)
 						for a in adjacent(
 							location[unit.id].map_location(),
 							2,
@@ -1017,10 +1021,13 @@ while True:
 						):
 							if gc.can_load(unit.id, a.id) and ( \
 								a.unit_type in [m,r,k,h] \
+								or not has_worker \
 								or round_num >= 725 \
 							):
 								gc.load(unit.id, a.id)
 								ulocation(a, gc.unit(a.id).location)
+								if a.unit_type == w:
+									has_worker = True
 
 						if (len(unit.structure_garrison()) > 0 or round_num >= 748) \
 							and len(mars_locations) > 0 \
@@ -1885,6 +1892,7 @@ while True:
 			len(dunits[ateam][w]) > 0 and \
 			all( \
 				not any( \
+					location[u.id].is_on_map() and \
 					on_pmap(add(u, d)) and \
 					pmap.is_passable_terrain_at(add(u, d)) and \
 					(add(u, d).x, add(u, d).y) not in munits
