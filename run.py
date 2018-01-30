@@ -622,9 +622,6 @@ while True:
 		estructuresv_eunits = estructuresv + eunits
 		estructuresv_eunits_s = estructuresv_eunits[::downsample]
 
-		build_factories = karbonite >= f.blueprint_cost()
-		should_build_rocket = karbonite >= t.blueprint_cost()
-
 		# overcharge priority
 		def needs_overcharge(ally):
 			return ally.ability_heat() >= 10 or \
@@ -821,6 +818,26 @@ while True:
 		acentroid = centroid(aunits)
 		ecentroid = centroid(eunits + list(estructures.values()))
 
+		gtm = gc.research_info().get_level(t) >= 1 and (
+			#gc.winning_team() == ateam or
+			(
+				len(dunits[ateam][f]) >= 2 and
+				len(dunits[ateam][w]) >= min_num_workers and
+				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
+					sum(len(dunits[eteam][ut]) for ut in [k,m,r])
+			) or (
+				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
+					aggressive_attacker_count
+			) or round_num > 600
+			or True
+		)
+
+		build_factories = karbonite >= f.blueprint_cost() and (
+			len(dunits[ateam][f]) < min_num_factories or
+			not at_unit_cap
+		)
+		should_build_rocket = karbonite >= t.blueprint_cost() and gtm
+
 		dunits[ateam][w] = sorted(sorted(sorted(dunits[ateam][w],
 			# farther from enemies
 			key=lambda a: (a.location.
@@ -831,7 +848,7 @@ while True:
 				if a.location.is_on_map() else float('inf')
 			),
 			# good build locations if building factory
-			key=lambda a: 0 if karbonite < t.blueprint_cost() else
+			key=lambda a: 0 if not (should_build_rocket or build_factories) else
 				-max(
 					-1 if
 						not a.location.is_on_map() or
@@ -864,20 +881,6 @@ while True:
 		dunits[ateam][f] = sorted(dunits[ateam][f], key=lambda a:
 			a.location.map_location().distance_squared_to(ecentroid)
 			if a.location.is_on_map() else float('inf')
-		)
-
-		gtm = gc.research_info().get_level(t) >= 1 and (
-			#gc.winning_team() == ateam or
-			(
-				len(dunits[ateam][f]) >= 2 and
-				len(dunits[ateam][w]) >= min_num_workers and
-				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
-					sum(len(dunits[eteam][ut]) for ut in [k,m,r])
-			) or (
-				sum(len(dunits[ateam][ut]) for ut in [k,m,r]) >
-					aggressive_attacker_count
-			) or round_num > 600
-			or True
 		)
 
 		# sort enemies in order of who we want to attack
@@ -1468,7 +1471,7 @@ while True:
 					and karbonite > min( \
 						f.blueprint_cost(), \
 						t.blueprint_cost() \
-				):
+				) and (should_build_rocket or build_factories):
 					bdirections = sorted(directions, key=lambda d: -len([
 						dd
 						for dd in directions
@@ -1487,18 +1490,14 @@ while True:
 						)
 					]))
 					for d in bdirections:
-						if gc.can_blueprint(unit.id, t, d) and gtm:
+						if gc.can_blueprint(unit.id, t, d) and should_build_rocket:
 							gc.blueprint(unit.id, t, d)
 							karbonite -= t.blueprint_cost()
 							w_is_busy = True
 							#rprint('built a rocket')
 							built_rocket = True
 							break
-						elif gc.can_blueprint(unit.id, f, d) and ( \
-							len(dunits[ateam][f]) < min_num_factories or \
-							not at_unit_cap and karbonite > 200 and \
-							built_factory \
-						):
+						elif gc.can_blueprint(unit.id, f, d) and build_factories:
 							gc.blueprint(unit.id, f, d)
 							karbonite -= f.blueprint_cost()
 							w_is_busy = True
@@ -1536,8 +1535,8 @@ while True:
 							karbonite_locations = karbonite_locations.remove(
 								(kx, ky)
 							)
-							if not karbonite_locations.is_balanced:
-								karbonite_locations = karbonite_locations.rebalance()
+							#if not karbonite_locations.is_balanced:
+							#	karbonite_locations = karbonite_locations.rebalance()
 
 				btime(16)
 				atime(18)
@@ -1859,11 +1858,13 @@ while True:
 					ulocation(u, u.location)
 					if u.location.is_on_map():
 						pass
-						update_sunk_danger(
-							unit,
-							u.location.map_location(),
-							reattackers
-						)
+						if ut in [k,r]:
+							pass
+							update_sunk_danger(
+								unit,
+								u.location.map_location(),
+								reattackers
+							)
 					for i in range(len(opriority)):
 						if opriority[i](u):
 							ounits[i].append(u)
