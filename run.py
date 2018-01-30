@@ -1858,7 +1858,7 @@ while True:
 					ulocation(u, u.location)
 					if u.location.is_on_map():
 						pass
-						if ut in [k,r]:
+						if ut in [r,m,h]:
 							pass
 							update_sunk_danger(
 								unit,
