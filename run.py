@@ -888,6 +888,13 @@ while True:
 			#)) if a.location.is_on_map() else float('-inf')
 		)
 
+		ohealers = {
+			u.id: u
+			for u in dunits[ateam][h]
+			if u.ability_heat() < 10
+			and can_overcharge
+		}
+
 		dunits[ateam][f] = sorted(dunits[ateam][f], key=lambda a:
 			a.location.map_location().distance_squared_to(ecentroid)
 			if a.location.is_on_map() else float('inf')
@@ -1238,7 +1245,7 @@ while True:
 											got_overcharged = False
 											while True:
 												healer2 = next((
-													a for a in dunits[ateam][h]
+													a for a in ohealers.values()
 													if location[a.id].is_on_map()
 													and location[a.id].
 														map_location().
@@ -1247,10 +1254,10 @@ while True:
 															uml
 														)
 													and health[a.id] > 0
-													and gc.is_overcharge_ready(a.id)
 												), None)
 												if healer2:
 													gc.overcharge(healer2.id, uid)
+													ohealers.pop(healer2.id)
 													got_overcharged = True
 													if not mattack(meunits):
 														break
@@ -1285,7 +1292,7 @@ while True:
 						:
 							# pick closest enemy
 							enemy = next((
-								e for e in dunits[eteam][r]
+								e for e in mbeunits
 								if health[e.id] > 0
 								and location[e.id].is_on_map()
 								and dist_n_steps(
@@ -1312,7 +1319,7 @@ while True:
 									and pmap.is_passable_terrain_at(fml) \
 								:
 									healer = next((
-										a for a in dunits[ateam][h]
+										a for a in ohealers.values()
 										if location[a.id].is_on_map()
 										and location[a.id].
 											map_location().
@@ -1321,12 +1328,12 @@ while True:
 												iml
 											)
 										and health[a.id] > 0
-										and gc.is_overcharge_ready(a.id)
 									), None)
 
 									if healer:
 										gc.move_robot(uid, idir)
 										gc.overcharge(healer.id, uid)
+										ohealers.pop(healer.id)
 										gc.move_robot(uid, fdir)
 
 										ulocation(unit, gc.unit(uid).location)
@@ -1336,7 +1343,7 @@ while True:
 											#rprint('moma succeeded')
 											while True:
 												healer2 = next((
-													a for a in dunits[ateam][h]
+													a for a in ohealers.values()
 													if location[a.id].is_on_map()
 													and location[a.id].
 														map_location().
@@ -1345,10 +1352,10 @@ while True:
 															uml
 														)
 													and health[a.id] > 0
-													and gc.is_overcharge_ready(a.id)
 												), None)
 												if healer2:
 													gc.overcharge(healer2.id, uid)
+													ohealers.pop(healer2.id)
 													if not mattack(meunits):
 														break
 												else:
@@ -1574,6 +1581,7 @@ while True:
 							) and health[ally.id] > 0 and needs_overcharge(ally):
 								try:
 									gc.overcharge(unit.id, ally.id)
+									ohealers.pop(unit.id)
 									overcharged.append(gc.unit(ally.id))
 								except:
 									pass
