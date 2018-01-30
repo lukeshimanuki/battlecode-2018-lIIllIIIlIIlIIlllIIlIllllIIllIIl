@@ -655,6 +655,16 @@ while True:
 		def add(unit, direction):
 			return location[unit.id].map_location().add(direction)
 
+		type_value = {
+			w: 10,
+			h: 18,
+			m: 24,
+			r: 12,
+			k: 7,
+			f: 10,
+			t: 5,
+		}
+
 		def value(unit):
 			# value per health point
 			# positive is good
@@ -668,7 +678,7 @@ while True:
 			:
 				return health[unit.id] / unit.max_health + 1
 
-			return unit.max_health / max(
+			return type_value[unit.unit_type] * unit.max_health / max(
 				health[unit.id],
 				unit.max_health / 2
 			) * (1 if unit.team == ateam else -1)
