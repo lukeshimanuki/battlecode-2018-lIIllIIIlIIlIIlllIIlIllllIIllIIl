@@ -1333,7 +1333,7 @@ while True:
 					if can_overcharge and not can_blink and gc.is_move_ready(uid):
 						# pick closest enemy
 						enemy = next((
-							e for e in mbeunits
+							e for e in dunits[eteam][r]
 							if health[e.id] > 0
 							and location[e.id].is_on_map()
 							and dist_n_steps(
