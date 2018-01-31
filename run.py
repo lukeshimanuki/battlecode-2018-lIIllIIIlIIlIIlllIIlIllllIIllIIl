@@ -6,6 +6,7 @@ import sys
 import traceback
 import collections
 import enum
+import math
 import array
 import gc as gcollector
 from kdtree import kdtree
@@ -1404,7 +1405,7 @@ while True:
 									and a.id != healer.id
 								]
 
-								if healer and len(healers) >= (2 if unit.damage() > 100 else 2):
+								if healer and len(healers) >= int(math.ceil(health[enemy.id] / unit.damage())) - 1:
 									gc.move_robot(uid, idir)
 									ulocation(unit, gc.unit(uid).location)
 									uml = location[uid].map_location()
