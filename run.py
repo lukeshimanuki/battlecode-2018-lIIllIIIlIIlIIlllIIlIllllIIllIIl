@@ -115,8 +115,8 @@ def desired_unit_ratio(round_num):
 		return normalize_ratio({
 			r: 2,
 			k: 0,
-			m: 5,
-			h: 3,
+			m: 3,
+			h: 5,
 		})
 
 def hml(ml):
@@ -1825,7 +1825,7 @@ while True:
 							lambda e: True,
 							50,
 						), 51),
-						None if ut not in [k,r,m] else
+						None if ut not in [k,r,m,h if can_overcharge else None] else
 							lambda d: min(-dist_to_nearest(
 								estructuresv_eunits_s,
 								add(unit, d),
