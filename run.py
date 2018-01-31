@@ -1288,6 +1288,7 @@ while True:
 
 				def flying_mages(mcan_move, mcan_blink):
 					# try to attack and get overcharged
+					options = []
 					for ml in possible_dests(mcan_move, mcan_blink):
 						if not on_pmap(ml) \
 							or not pmap.is_passable_terrain_at(ml) \
@@ -1297,17 +1298,26 @@ while True:
 
 						uh, ue = he(ml)
 						if uh and ue:
-							if not get_to_dest(ml, mcan_move, mcan_blink):
-								continue
+							options.append((ml, uh, ue))
 
-							mattack([ue])
-							gc.overcharge(uh.id, uid)
-							ohealers.pop(uh.id)
-							#rprint('flying mages')
-							flying_mages(True, can_blink)
-							return True
+					soptions = sorted(options, key=lambda t:
+						#-t[0].distance_squared_to(location[t[2].id].map_location())
+						0
+					)
+
+					for ml, uh, ue in soptions:
+						if not get_to_dest(ml, mcan_move, mcan_blink):
+							continue
+
+						mattack([ue])
+						gc.overcharge(uh.id, uid)
+						ohealers.pop(uh.id)
+						#rprint('flying mages')
+						flying_mages(True, can_blink)
+						return True
 
 					# just try to attack
+					aoptions = []
 					for ml in possible_dests(mcan_move, mcan_blink):
 						if not on_pmap(ml) \
 							or not pmap.is_passable_terrain_at(ml) \
@@ -1317,11 +1327,20 @@ while True:
 
 						uh, ue = he(ml)
 						if ue:
-							if not get_to_dest(ml, mcan_move, mcan_blink):
-								continue
+							aoptions.append((ml, ue))
 
-							mattack([ue])
-							return True
+					saoptions = sorted(aoptions, key=lambda t:
+						-t[0].distance_squared_to(location[t[1].id].map_location())
+					)
+
+					for ml, ue in saoptions:
+						if not get_to_dest(ml, mcan_move, mcan_blink):
+							continue
+
+						mattack([ue])
+						return True
+
+					return False
 
 				if ut == m:
 					if unit.attack_heat() < 10:
