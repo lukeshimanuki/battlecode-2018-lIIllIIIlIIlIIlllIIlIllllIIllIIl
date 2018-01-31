@@ -1859,14 +1859,14 @@ while True:
 							lambda e: True,
 							0,
 						), 64),
-						None if ut not in [h if can_overcharge else None] else
-							lambda d: -dist_to_nearest(
-								dunits[ateam][m],
-								add(unit, d),
-								lambda e: True,
-								0,
-								mdist
-							),
+						#None if ut not in [h if can_overcharge else None] else
+						#	lambda d: -dist_to_nearest(
+						#		dunits[ateam][m],
+						#		add(unit, d),
+						#		lambda e: True,
+						#		0,
+						#		mdist
+						#	),
 						None if ut not in [k,r,m,h if can_overcharge else None] else
 							lambda d: min(-dist_to_nearest(
 								estructuresv_eunits_s,
