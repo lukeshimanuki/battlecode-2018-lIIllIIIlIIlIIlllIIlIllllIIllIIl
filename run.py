@@ -894,6 +894,7 @@ while True:
 			for u in dunits[ateam][h]
 			if u.ability_heat() < 10
 			and can_overcharge
+			#and round_num % 10 == 0
 		}
 
 		dunits[ateam][f] = sorted(dunits[ateam][f], key=lambda a:
@@ -1371,7 +1372,20 @@ while True:
 									and health[a.id] > 0
 								), None)
 
-								if healer:
+								healers = [
+									a for a in ohealers.values()
+									if location[a.id].is_on_map()
+									and location[a.id].
+										map_location().
+										is_within_range(
+											a.attack_range(),
+											fml
+										)
+									and health[a.id] > 0
+									and a.id != healer.id
+								]
+
+								if healer and len(healers) >= (2 if unit.damage() > 100 else 2):
 									gc.move_robot(uid, idir)
 									ulocation(unit, gc.unit(uid).location)
 									uml = location[uid].map_location()
@@ -1702,7 +1716,7 @@ while True:
 
 						# micro
 						# be able to attack someone
-						None if not ut in [m,k] else
+						None if not ut in [k,m if not can_overcharge else None] else
 							lambda d: exists_nearby(
 								reattackers,
 								add(unit, d),
@@ -1823,8 +1837,16 @@ while True:
 							dunits[eteam][r],
 							add(unit, d),
 							lambda e: True,
-							50,
-						), 51),
+							0,
+						), 64),
+						None if ut not in [h if can_overcharge else None] else
+							lambda d: -dist_to_nearest(
+								dunits[ateam][m],
+								add(unit, d),
+								lambda e: True,
+								0,
+								mdist
+							),
 						None if ut not in [k,r,m,h if can_overcharge else None] else
 							lambda d: min(-dist_to_nearest(
 								estructuresv_eunits_s,
