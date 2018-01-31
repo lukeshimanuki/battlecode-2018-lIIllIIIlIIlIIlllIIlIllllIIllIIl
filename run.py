@@ -97,7 +97,7 @@ def desired_unit_ratio(round_num):
 	elif round_num < 235:
 		# after healers upgraded
 		return normalize_ratio({
-			r: 4,
+			r: 5,
 			k: 0,
 			m: 2 if see_knights < 1 else 0,
 			h: 3,
@@ -107,16 +107,16 @@ def desired_unit_ratio(round_num):
 		return normalize_ratio({
 			r: 4,
 			k: 0,
-			m: 2,
-			h: 4,
+			m: 1,
+			h: 5,
 		})
 	else:
 		# blink ready
 		return normalize_ratio({
 			r: 2,
 			k: 0,
-			m: 3,
-			h: 5,
+			m: 2,
+			h: 6,
 		})
 
 def hml(ml):
